@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "packages": [
+    {
+      "name": "nsh-o11y",
+      "version": "0.1.0",
+      "path": "..",
+      "module": "nsh-o11y/native",
+      "exports": {
+        "nsh-o11y": "src/index.ts"
+      }
+    }
+  ]
+}

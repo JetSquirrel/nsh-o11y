@@ -1,0 +1,13 @@
+{
+  "name": "nsh-o11y perf",
+  "id": "dev.nsho11y.perf",
+  "version": "0.0.0",
+  "build": 1,
+  "nsh": ">=0.6",
+  "window": { "title": "nsh-o11y (Rust)", "defaultSize": { "width": 1240, "height": 860 } },
+  "dependencies": {
+    "nsh-o11y": {
+      "path": ".."
+    }
+  }
+}

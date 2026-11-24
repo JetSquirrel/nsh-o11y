@@ -1,0 +1,4 @@
+{
+  "nsh": ">=0.6",
+  "exports": { "nsh-o11y": "src/index.ts" }
+}

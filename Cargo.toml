@@ -1,0 +1,25 @@
+[package]
+name = "nsh-o11y"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Observability charts for Native Shell (NSH): a time series chart with level-of-detail rendering in TSX and Rust"
+readme = "README.md"
+keywords = ["nshm", "nsh", "chart", "timeseries", "observability"]
+categories = ["visualization", "gui"]
+# The nshm: the TSX the app imports as "nsh-o11y" (nsh.json "exports") and the Rust module it imports as
+# "nsh-o11y/native". Examples, benchmarks and perf stay out of the package.
+include = ["/Cargo.toml", "/nsh.json", "/README.md", "/LICENSE", "/src/**/*.ts", "/src/**/*.tsx", "/native/src/**/*.rs"]
+
+# Built on its own, not as part of an app's workspace.
+[workspace]
+
+[lib]
+path = "native/src/lib.rs"
+
+[dependencies]
+nsh-core = "0.6.0"
+
+[profile.dev]
+# Tracing runs every frame: even debug builds need it optimized.
+opt-level = 2
