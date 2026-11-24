@@ -314,6 +314,51 @@ describe("heatmap", () => {
     expect(lin.bucketOf(55)).toBe(5);
   });
 
+  test("exemplars: one per cell, found near the pointer, listed, drawn", () => {
+    const s = new HeatmapStore({ step: 1000, min: 5, max: 5000, buckets: 48 });
+    for (let t = 0; t < 10_000; t += 100) s.add(t, [40, 50, 60]);
+    s.addExemplar({ time: 2_300, value: 45, id: "aaa" });
+    s.addExemplar({ time: 2_600, value: 46, id: "bbb" }); // same cell: the newer wins
+    s.addExemplar({ time: 7_100, value: 900, id: "ccc", error: true, attributes: { route: "POST /api/checkout" } }, true);
+    expect(s.exemplars().map((x) => x.id)).toEqual(["bbb", "ccc"]);
+    expect(s.column(s.lower(7_000)).total).toBe(31); // counted when asked
+    const e = new HeatmapEngine();
+    e.store = s;
+    e.setSize(600, 200);
+    e.update(0, 10_000);
+    const p = e.exemplarPoint(s.exemplars()[1]);
+    expect(e.exemplarAt(p.x + 3, p.y - 2)!.id).toBe("ccc");
+    expect(e.exemplarAt(p.x + 30, p.y)).toBeNull();
+    const lines = e.exemplarLines(s.exemplars()[1]);
+    expect(lines[0].color).toBe("#e34948");
+    expect(lines.some((l) => l.text === "trace ccc")).toBe(true);
+    expect(lines.some((l) => l.text === "route POST /api/checkout")).toBe(true);
+    e.showExemplars = false;
+    expect(e.exemplarAt(p.x, p.y)).toBeNull();
+    e.showExemplars = true;
+    const cx = ctx(600, 200);
+    e.measure = (t) => cx.measureText(t).width;
+    const paths: string[] = [];
+    renderHeatmap(cx, e, THEME, (d) => (paths.push(d), new Path2D(d)));
+    expect(paths.filter((d) => d.includes("Z") && !d.includes("h")).length).toBe(2); // one plain, one error
+    e.hoverExemplar = s.exemplars()[0];
+    e.pointer = { x: 100, y: 100 };
+    renderHeatmapOverlay(cx, e, THEME);
+    // A crowd thins to what fits apart: errors first, then the slowest.
+    for (let t = 0; t < 10_000; t += 50) s.addExemplar({ time: t, value: 40 + (t % 7), id: `n${t}` });
+    s.addExemplar({ time: 5_000, value: 41, id: "err", error: true });
+    e.update(0, 10_000);
+    expect(e.shown.length).toBeLessThan(s.exemplars().length); // the store keeps one per cell; the view fewer
+    expect(e.shown.some((x) => x.id === "err")).toBe(true);
+    for (const a of e.shown)
+      for (const b of e.shown) {
+        if (a === b) continue;
+        const pa = e.exemplarPoint(a);
+        const pb = e.exemplarPoint(b);
+        expect(Math.hypot(pa.x - pb.x, pa.y - pb.y)).toBeGreaterThanOrEqual(e.exemplarSpacing - 1e-9);
+      }
+  });
+
   test("the oldest columns are dropped", () => {
     const s = new HeatmapStore({ step: 1, maxColumns: 20 });
     for (let t = 0; t < 100; t++) s.add(t, 10);

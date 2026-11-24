@@ -5,8 +5,8 @@
  * a cell for its count and the column's percentiles. With `sync`, it shares the crosshair with the time
  * series charts and follows their zoom.
  */
-import { Canvas, Path2D, Text, View, cleanup, computed, effect, signal, untracked, type MouseEvent, type ViewStyle } from "nsh";
-import { HeatmapEngine, HeatmapStore, PERCENTILE_COLORS, heatRamp, renderHeatmap, renderHeatmapOverlay } from "./distribution";
+import { Canvas, Path2D, Text, View, cleanup, computed, effect, signal, untracked, type GestureResponderEvent, type MouseEvent, type ViewStyle } from "nsh";
+import { HeatmapEngine, HeatmapStore, PERCENTILE_COLORS, type Exemplar, heatRamp, renderHeatmap, renderHeatmapOverlay } from "./distribution";
 import { fontOf, measureCached, type Ctx2D } from "./render";
 import { formatValue, type TimeZone, type Unit } from "./scale";
 import type { ChartSync } from "./sync";
@@ -29,6 +29,10 @@ export interface HeatmapProps {
   timeZone?: TimeZone;
   /** Shares the crosshair with linked charts and follows their zoom. */
   sync?: ChartSync;
+  /** Draw the store's exemplars. Default true. */
+  exemplars?: boolean;
+  /** An exemplar was pressed: open its trace. */
+  onExemplarClick?: (exemplar: Exemplar) => void;
   colors?: ChartColors;
   fontFamily?: string;
   fontSize?: number;
@@ -100,12 +104,30 @@ export function Heatmap(props: HeatmapProps) {
 
   const onMouseMove = (ev: MouseEvent) => {
     e.pointer = { x: ev.position.x, y: ev.position.y };
-    e.hover = e.cellAt(ev.position.x, ev.position.y);
+    e.hoverExemplar = e.exemplarAt(ev.position.x, ev.position.y);
+    e.hover = e.hoverExemplar ? null : e.cellAt(ev.position.x, ev.position.y);
     const s = e.store;
     props.sync?._setCursor(e.hover && s ? s.column(e.hover.col).time + s.step / 2 : null, syncId);
     overlayFrame.update((n) => n + 1);
   };
+  // A tap (a click, or a finger) on an exemplar opens it.
+  let tap: { origin: number; originY: number; x: number; y: number } | null = null;
+  const onGrant = (ev: GestureResponderEvent) => {
+    tap = { origin: ev.pageX - ev.locationX, originY: ev.pageY - ev.locationY, x: ev.locationX, y: ev.locationY };
+    return true;
+  };
+  const onRelease = (ev: GestureResponderEvent) => {
+    const t = tap;
+    tap = null;
+    if (!t) return;
+    const x = ev.pageX - t.origin;
+    const y = ev.pageY - t.originY;
+    if (Math.abs(x - t.x) + Math.abs(y - t.y) > 8) return;
+    const ex = e.exemplarAt(x, y, 10);
+    if (ex) props.onExemplarClick?.(ex);
+  };
   const onMouseLeave = () => {
+    e.hoverExemplar = null;
     e.hover = null;
     props.sync?._setCursor(null, syncId);
     overlayFrame.update((n) => n + 1);
@@ -144,6 +166,7 @@ export function Heatmap(props: HeatmapProps) {
             e.fontSize = t.fontSize;
             e.percentiles = qs();
             e.ramp = heatRamp(isDark(t), props.ramp);
+            e.showExemplars = props.exemplars ?? true;
             const [x0, x1] = viewRange();
             untracked(() => {
               e.setSize(size.width, size.height);
@@ -158,6 +181,10 @@ export function Heatmap(props: HeatmapProps) {
           testID={props.testID ? `${props.testID}-plot` : undefined}
           role="image"
           accessibilityLabel={label()}
+          onStartShouldSetResponder={() => !!props.onExemplarClick}
+          onResponderGrant={onGrant}
+          onResponderRelease={onRelease}
+          onResponderTerminate={() => (tap = null)}
           onMouseMove={onMouseMove}
           onMouseLeave={onMouseLeave}
           draw={(cx) => {

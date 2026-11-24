@@ -23,10 +23,23 @@ export interface HeatmapOptions {
   maxColumns?: number;
 }
 
+/** One observation kept with what it came from: a trace id, so a cell leads to a request in it. */
+export interface Exemplar {
+  time: number;
+  value: number;
+  /** A trace id, usually. */
+  id: string;
+  /** Drawn red. */
+  error?: boolean;
+  attributes?: Record<string, string | number | boolean>;
+}
+
 export interface HeatmapColumn {
   time: number;
   counts: Float64Array;
   total: number;
+  /** At most one exemplar per bucket: the newest. */
+  exemplars?: (Exemplar | undefined)[];
 }
 
 export class HeatmapStore {
@@ -127,6 +140,31 @@ export class HeatmapStore {
     this.changed();
   }
 
+  /**
+   * Keeps an exemplar (and counts it as an observation when `count`): one per cell, the newest replacing
+   * the one before.
+   */
+  addExemplar(ex: Exemplar, count = false) {
+    const c = this.col(ex.time);
+    const b = this.bucketOf(ex.value);
+    (c.exemplars ??= [])[b] = ex;
+    if (count) {
+      c.counts[b]++;
+      c.total++;
+    }
+    this.changed();
+  }
+
+  /** The exemplars of columns [i0, i1). */
+  exemplars(i0 = 0, i1 = this.cols.length): Exemplar[] {
+    const out: Exemplar[] = [];
+    for (let i = Math.max(0, i0); i < Math.min(i1, this.cols.length); i++) {
+      const ex = this.cols[i].exemplars;
+      if (ex) for (const e of ex) if (e) out.push(e);
+    }
+    return out;
+  }
+
   /** Adds pre-bucketed counts at time t, one per bucket of this store (a histogram metric's deltas). */
   addCounts(t: number, counts: ArrayLike<number>) {
     const c = this.col(t);
@@ -216,6 +254,76 @@ export class HeatmapEngine {
   pointer = { x: 0, y: 0 };
   /** Another chart's cursor time (a linked crosshair), or null. */
   syncTime: number | null = null;
+  /** Draw the store's exemplars. */
+  showExemplars = true;
+  /** The exemplar under the pointer. */
+  hoverExemplar: Exemplar | null = null;
+
+  /** The exemplars drawn: those in view, thinned so none overlap. */
+  shown: Exemplar[] = [];
+  /** How far apart drawn exemplars stay, in points. */
+  exemplarSpacing = 12;
+
+  /**
+   * Errors first, then the slowest: each exemplar is kept unless one kept already sits within
+   * `exemplarSpacing` of it (checked in a grid of that size), so a busy minute shows a few, not hundreds.
+   */
+  private thin(s: HeatmapStore): Exemplar[] {
+    if (!this.showExemplars) return [];
+    const all = s.exemplars(this.i0, this.i1).filter((ex) => ex.time >= this.x0 && ex.time <= this.x1);
+    all.sort((a, b) => (a.error === b.error ? b.value - a.value : a.error ? -1 : 1));
+    const g = this.exemplarSpacing;
+    const grid = new Map<string, { x: number; y: number }[]>();
+    const kept: Exemplar[] = [];
+    for (const ex of all) {
+      const { x, y } = this.exemplarPoint(ex);
+      const gx = Math.floor(x / g);
+      const gy = Math.floor(y / g);
+      let clear = true;
+      for (let i = -1; i <= 1 && clear; i++)
+        for (let j = -1; j <= 1 && clear; j++)
+          for (const p of grid.get(`${gx + i},${gy + j}`) ?? []) if ((p.x - x) * (p.x - x) + (p.y - y) * (p.y - y) < g * g) clear = false;
+      if (!clear) continue;
+      kept.push(ex);
+      const key = `${gx},${gy}`;
+      const list = grid.get(key);
+      if (list) list.push({ x, y });
+      else grid.set(key, [{ x, y }]);
+    }
+    return kept;
+  }
+
+  /** Where an exemplar is drawn: its time and value. */
+  exemplarPoint(ex: Exemplar) {
+    return { x: this.toPx(ex.time), y: this.toPy(ex.value) };
+  }
+
+  /** The exemplar within `radius` points of (x, y), the nearest. */
+  exemplarAt(x: number, y: number, radius = 7): Exemplar | null {
+    const s = this.store;
+    if (!s || !this.showExemplars) return null;
+    let best: Exemplar | null = null;
+    let bestD = radius * radius;
+    for (const ex of this.shown) {
+      const p = this.exemplarPoint(ex);
+      const d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
+      if (d <= bestD) {
+        bestD = d;
+        best = ex;
+      }
+    }
+    return best;
+  }
+
+  exemplarLines(ex: Exemplar): TooltipLine[] {
+    const lines: TooltipLine[] = [
+      { text: `${formatValue(ex.value, this.unit)} · ${formatTimeFull(ex.time, 1, this.timeZone)}`, color: ex.error ? "#e34948" : undefined },
+      { text: `trace ${ex.id.slice(0, 16)}`, muted: true },
+    ];
+    for (const k in ex.attributes ?? {}) lines.push({ text: `${k} ${String(ex.attributes![k])}`, muted: true });
+    lines.push({ text: "Press to open", muted: true });
+    return lines;
+  }
   measure: (t: string) => number = (t) => t.length * 6;
 
   setSize(width: number, height: number) {
@@ -242,6 +350,7 @@ export class HeatmapEngine {
       for (let b = 0; b < c.length; b++) if (c[b] > max) max = c[b];
     }
     this.maxCount = max;
+    this.shown = this.thin(s);
   }
 
   /** Ticks at 1-2-5 values (log) or even steps (linear), about 28 points apart. */
@@ -349,6 +458,26 @@ export function renderHeatmap(cx: Ctx2D, e: HeatmapEngine, theme: ChartTheme, pa
       }
     }
     cells.fill(cx, path);
+    // Exemplars: small diamonds on the surface color, ringed in the text color (errors in red).
+    if (e.showExemplars) {
+      let ok = "";
+      let bad = "";
+      for (const ex of e.shown) {
+        const { x, y } = e.exemplarPoint(ex);
+        const d = `M${r1(x)} ${r1(y - 4.5)}L${r1(x + 4.5)} ${r1(y)}L${r1(x)} ${r1(y + 4.5)}L${r1(x - 4.5)} ${r1(y)}Z`;
+        if (ex.error) bad += d;
+        else ok += d;
+      }
+      for (const [d, color] of [[ok, theme.text], [bad, "#e34948"]] as const) {
+        if (!d) continue;
+        const p = path(d);
+        cx.fillStyle = theme.surface;
+        cx.fill(p);
+        cx.strokeStyle = color;
+        cx.lineWidth = 1.25;
+        cx.stroke(p);
+      }
+    }
     // Percentile lines across the columns' middles; gaps where a column is empty.
     e.percentiles.forEach((q, k) => {
       let d = "";
@@ -404,6 +533,21 @@ export function renderHeatmapOverlay(cx: Ctx2D, e: HeatmapEngine, theme: ChartTh
     cx.stroke();
     cx.setLineDash([]);
   };
+  const hx = e.hoverExemplar;
+  if (hx) {
+    const { x, y } = e.exemplarPoint(hx);
+    cx.strokeStyle = hx.error ? "#e34948" : theme.text;
+    cx.lineWidth = 2;
+    cx.beginPath();
+    cx.moveTo(r1(x), r1(y - 7));
+    cx.lineTo(r1(x + 7), r1(y));
+    cx.lineTo(r1(x), r1(y + 7));
+    cx.lineTo(r1(x - 7), r1(y));
+    cx.closePath();
+    cx.stroke();
+    drawTooltip(cx, theme, e.exemplarLines(hx), e.pointer.x, e.pointer.y, e.width, e.height);
+    return;
+  }
   const h = e.hover;
   if (h) {
     const c = s.column(h.col);

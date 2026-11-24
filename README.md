@@ -132,6 +132,11 @@ column's percentiles. With `sync`, the heatmap shares the crosshair with linked 
 `addCounts(t, counts)` takes pre-bucketed histograms. In the example, the Latency panel switches to a heatmap,
 and the incident shows as a separate band at about 1 s that the p99 line jumps to.
 
+**Exemplars** tie the heatmap to traces: `addExemplar({ time, value, id, error?, attributes? })` keeps one per cell (the
+newest). Each shows as a diamond, red for errors, and `onExemplarClick(ex)` opens its trace. Where many would overlap,
+the errors and the slowest are kept, at least 12 points apart, so a busy minute shows a few. In the example, every
+traced request is an exemplar and a press opens it on the Traces tab.
+
 ## Logs, traces and profiles
 
 The example's **Logs**, **Traces** and **Profiles** tabs show all three components with the metrics: a log line's
@@ -355,8 +360,7 @@ cd bench/web && bun install && bun run.ts     # every library on the same scenar
 
 ## Roadmap
 
-- More O11y panels on the same engine: bar and stacked area, exemplars on heatmaps and time series linking to
-  traces.
+- More O11y panels on the same engine: bar and stacked area, exemplars on time series.
 - Traces: comparing two traces.
 - Logs in the Rust backend, for tens of millions of lines.
 - A second y axis.

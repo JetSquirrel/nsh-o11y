@@ -147,7 +147,7 @@ export function serviceLogs(seed = 11, incidents: [number, number][] = []) {
     const { traceId, spans } = checkoutTrace(traceSeed++, at, { error, slow: !error && r() < 0.1 });
     traces.set(traceId, spans);
     order.push(traceId);
-    if (order.length > 500) traces.delete(order.shift()!);
+    if (order.length > 3000) traces.delete(order.shift()!);
     return traceId;
   };
   const on = (t: number) => incidents.some(([a, b]) => t >= a && t < b);

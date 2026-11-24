@@ -17,6 +17,7 @@ import {
   profileFromFolded,
   topFunctions,
   type Annotation,
+  type LogEntry,
   type Span,
 } from "nsh-o11y";
 import { randomWalkChunks, requestLatencies, serviceMetrics } from "./data";
@@ -129,7 +130,18 @@ function App() {
   // Logs from the same 5 minutes, and the traces they link to.
   const logSource = serviceLogs(11, [incident]);
   const logs = new LogStore({ maxEntries: 50_000 });
-  logs.append(logSource.next(start - 300_000, start));
+  /** Each traced request becomes an exemplar on the latency heatmap: its duration, linking to its trace. */
+  const exemplarsFrom = (lines: LogEntry[]) => {
+    for (const l of lines) {
+      const root = l.traceId ? logSource.trace(l.traceId)?.find((s) => !s.parentId) : undefined;
+      if (root) latencyHeat.addExemplar({ time: l.time, value: root.duration, id: l.traceId!, error: root.status === "error", attributes: { route: root.name } });
+    }
+  };
+  {
+    const history = logSource.next(start - 300_000, start);
+    logs.append(history);
+    exemplarsFrom(history);
+  }
   let logT = start;
   annotations.set([
     { time: start - 200_000, label: "deploy v2.14", color: "#6250d6" },
@@ -147,7 +159,10 @@ function App() {
       now.set(last);
       const lines = logSource.next(logT, at);
       logT = at;
-      if (lines.length) logs.append(lines);
+      if (lines.length) {
+        logs.append(lines);
+        exemplarsFrom(lines);
+      }
     }
   }, STEP);
   void timer;
@@ -489,7 +504,15 @@ function App() {
             <Segment label="Heatmap" active={heat()} onPress={() => heat.set(true)} testID="latency-heat" />
           </View>
           {heat() ? (
-            <Heatmap testID="heatmap" data={latencyHeat} unit="ms" window={300_000} sync={sync} style={{ flex: 1 }} />
+            <Heatmap
+              testID="heatmap"
+              data={latencyHeat}
+              unit="ms"
+              window={300_000}
+              sync={sync}
+              onExemplarClick={(ex) => openTrace(ex.id)}
+              style={{ flex: 1 }}
+            />
           ) : (
             <TimeSeriesChart
               testID="latency"
