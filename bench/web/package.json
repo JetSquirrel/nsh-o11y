@@ -1,0 +1,12 @@
+{
+  "name": "nsh-o11y-bench-web",
+  "private": true,
+  "description": "Charting libraries on the same data and scenarios as perf/perf.test.ts, each in a fresh headless Chrome or Edge.",
+  "dependencies": {
+    "chart.js": "4.6.2",
+    "dygraphs": "2.2.2",
+    "echarts": "6.1.0",
+    "plotly.js-dist-min": "4.3.0",
+    "uplot": "1.6.32"
+  }
+}

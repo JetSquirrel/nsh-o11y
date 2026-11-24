@@ -1,8 +1,0 @@
-{
-  "name": "nsh-o11y-bench-uplot",
-  "private": true,
-  "description": "uPlot, the baseline nsh-o11y measures itself against, run in a headless browser on the same data and scenarios as perf/perf.test.ts.",
-  "dependencies": {
-    "uplot": "1.6.31"
-  }
-}

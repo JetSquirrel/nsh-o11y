@@ -93,25 +93,36 @@ function gauss(r: () => number) {
   return s - 6;
 }
 
-/** A live source of service metrics: one sample per call to `next(t)`. */
-export function serviceMetrics(seed = 7) {
+/**
+ * A live source of service metrics: one sample per call to `next(t)`. `incidents` are [start, end] times
+ * when latency, errors and CPU rise; after the last one, incidents come at random, now and then.
+ */
+export function serviceMetrics(seed = 7, incidents: [number, number][] = []) {
+  const planned = incidents.length ? Math.max(...incidents.map((i) => i[1])) : -Infinity;
   const r = rng(seed);
   let rate = 1200;
   let cpu = [35, 42, 28, 55];
   let incident = 0;
+  // Each sample is an aggregate (a rate, a percentile over a window), so the noise is smoothed, as a
+  // metrics backend's rollups are: an AR(1) process per signal instead of fresh noise every 100 ms.
+  const n = new Array(6).fill(0);
+  const smooth = (i: number, a = 0.92) => (n[i] = n[i] * a + gauss(r) * Math.sqrt(1 - a * a));
+  let hot = 0;
   return {
     /** Request rate (req/s), errors (req/s), p50 / p95 / p99 latency (ms), and 4 hosts' CPU (%). */
     next(t: number) {
       const minute = (t / 60_000) % 60;
-      rate += (1200 + Math.sin(minute / 9.5) * 300 - rate) * 0.05 + gauss(r) * 25;
-      if (incident <= 0 && r() < 0.002) incident = 40 + Math.floor(r() * 60);
-      const hot = incident > 0 ? 1 : 0;
+      rate += (1200 + Math.sin(minute / 9.5) * 300 - rate) * 0.02 + smooth(0) * 9;
+      if (t > planned && incident <= 0 && r() < 0.0004) incident = 80 + Math.floor(r() * 120);
       if (incident > 0) incident--;
-      const errors = Math.max(0, rate * (0.004 + hot * 0.05) + gauss(r) * 2);
-      const p50 = 42 + gauss(r) * 3 + hot * 30;
-      const p95 = p50 * (2.4 + r() * 0.3) + hot * 120;
-      const p99 = p95 * (1.6 + r() * 0.4) + hot * 200;
-      cpu = cpu.map((c, i) => Math.max(1, Math.min(100, c + (40 + i * 6 - c) * 0.03 + gauss(r) * 2 + hot * 1.5)));
+      const on = incident > 0 || incidents.some(([a, b]) => t >= a && t < b);
+      // Incidents ramp in and out over a couple of seconds.
+      hot += ((on ? 1 : 0) - hot) * 0.08;
+      const errors = Math.max(0, rate * (0.004 + hot * 0.05) * (1 + smooth(1) * 0.25));
+      const p50 = 42 + smooth(2) * 2.5 + hot * 30;
+      const p95 = p50 * 2.5 + smooth(3) * 6 + hot * 120;
+      const p99 = p95 * 1.75 + smooth(4) * 14 + hot * 200;
+      cpu = cpu.map((c, i) => Math.max(1, Math.min(100, c + (40 + i * 6 - c) * 0.01 + gauss(r) * 0.6 + hot * 0.6)));
       return { rate, errors, p50, p95, p99, cpu };
     },
   };

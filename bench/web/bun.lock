@@ -1,0 +1,33 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "nsh-o11y-bench-web",
+      "dependencies": {
+        "chart.js": "4.6.2",
+        "dygraphs": "2.2.2",
+        "echarts": "6.1.0",
+        "plotly.js-dist-min": "4.3.0",
+        "uplot": "1.6.32",
+      },
+    },
+  },
+  "packages": {
+    "@kurkle/color": ["@kurkle/color@0.6.6", "", {}, "sha512-Bd1NjGyoe27ExXRIBu13YymFP6k/wFxpUkX97Z3RlofLFV43nECB2G8vETZzcZzz2Ct2oRzwYElX65lxyi5UNg=="],
+
+    "chart.js": ["chart.js@4.6.2", "", { "dependencies": { "@kurkle/color": "^0.6.6" } }, "sha512-xachB+pPHjp0syJi7llUBA1w3kMYl6NF3o7eVrvjnWCT+IB2zMaF2pX5UYDiwbbfsioFEIRnAjreNOMsGj5TIA=="],
+
+    "dygraphs": ["dygraphs@2.2.2", "", {}, "sha512-9Vl3MeAfuL12uMVNQLGYWGKCDmdExu6a66MCgZKAko7WAEfv8vuAGK52NrTng+J6sRSYq/J1TR//9U34/H3ZqQ=="],
+
+    "echarts": ["echarts@6.1.0", "", { "dependencies": { "tslib": "2.3.0", "zrender": "6.1.0" } }, "sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA=="],
+
+    "plotly.js-dist-min": ["plotly.js-dist-min@4.3.0", "", {}, "sha512-Vv1gkRoFXiCDmGDe1q22jEvTSJgB+nASs5tzkqotUTIXfP++N0hAOaqVN3QMgGPxsuBRviupX8+1dJX/V6jqgA=="],
+
+    "tslib": ["tslib@2.3.0", "", {}, "sha512-N82ooyxVNm6h1riLCoyS9e3fuJ3AMG2zIZs2Gd1ATcSFjSA23Q0fzjjZeh0jbJvWVDZ0cJT8yaNNaaXHzueNjg=="],
+
+    "uplot": ["uplot@1.6.32", "", {}, "sha512-KIMVnG68zvu5XXUbC4LQEPnhwOxBuLyW1AHtpm6IKTXImkbLgkMy+jabjLgSLMasNuGGzQm/ep3tOkyTxpiQIw=="],
+
+    "zrender": ["zrender@6.1.0", "", { "dependencies": { "tslib": "2.3.0" } }, "sha512-oEGMDB6pOP2S6OwRR4PdVv610zrjnA3Bh+JnSG12fYJlBKjtNAoEb5fSUoCOOINlH96I2fU38/A2UpRKs67xYQ=="],
+  }
+}
