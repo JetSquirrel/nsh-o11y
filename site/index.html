@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>nsh-o11y · time-series charts for Native Shell</title>
-<meta name="description" content="Observability charts for Native Shell (NSH), shipped as an nshm: a TSX TimeSeriesChart with an opt-in Rust backend. Millions of points at a few milliseconds a frame, live data, synced panels, on iOS, Android, desktop and the web.">
+<meta name="description" content="Observability charts for Native Shell (NSH), shipped as an nshm: a TSX TimeSeriesChart with an opt-in Rust backend, and logs, trace waterfalls, flame graphs and latency heatmaps. Millions of points at a few milliseconds a frame, live data, synced panels, on iOS, Android, desktop and the web.">
 <meta name="color-scheme" content="light dark">
 <meta property="og:title" content="nsh-o11y">
 <meta property="og:description" content="Time-series charts for Native Shell that stay fast at 10 million points.">
@@ -141,6 +141,7 @@
   .sub { color: var(--muted); max-width: 42em; margin: 0 0 36px; font-size: 17px; }
 
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid.two { grid-template-columns: repeat(2, 1fr); }
   .card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px;
     min-width: 0;
@@ -223,7 +224,7 @@
   @media (max-width: 640px) {
     .wrap { padding: 0 16px; }
     header.nav nav a.opt { display: none; }
-    .grid { grid-template-columns: 1fr; }
+    .grid, .grid.two { grid-template-columns: 1fr; }
     .hero { padding-top: 48px; }
     .install { width: 100%; justify-content: space-between; }
     .bar-row { grid-template-columns: 96px 1fr; font-size: 13px; }
@@ -245,6 +246,7 @@
     </a>
     <nav>
       <a href="#features" class="opt">Features</a>
+      <a href="#signals" class="opt">Logs &amp; traces</a>
       <a href="#performance" class="opt">Performance</a>
       <a href="#compare" class="opt">Compare</a>
       <a href="https://github.com/JetSquirrel/nsh-o11y#readme">Docs</a>
@@ -261,7 +263,8 @@
       <h1>Time-series charts that stay fast at <em>10 million</em> points.</h1>
       <p class="lede">
         Observability charts for <a href="https://nsh.dev">Native Shell</a>: a TSX <code>TimeSeriesChart</code> with an
-        opt-in Rust backend. Live metrics, zoom, synced panels, thresholds and deploy markers, drawn on NSH's native
+        opt-in Rust backend, and logs, trace waterfalls, flame graphs and latency heatmaps beside it. Live metrics, zoom,
+        synced panels, thresholds and deploy markers, drawn on NSH's native
         canvas on iOS, Android, desktop and the web.
       </p>
       <div class="cta">
@@ -293,6 +296,7 @@
           <span>Scroll or pinch to zoom · double-click resets</span>
           <span><kbd>←</kbd><kbd>→</kbd> step the cursor · <kbd>Backspace</kbd> back · <kbd>0</kbd> reset</span>
           <span>Click a legend entry to hide a series</span>
+          <span>Tabs: <b>Logs</b>, <b>Traces</b>, <b>Profiles</b> · Latency → <b>Heatmap</b></span>
         </div>
       </div>
     </div>
@@ -332,6 +336,35 @@
           <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><rect x="5" y="12" width="34" height="20" rx="3" fill="none" stroke="var(--edge)" stroke-width="1.5"/><g fill="var(--text)"><rect x="9" y="16" width="5" height="5" rx="1"/><rect x="16" y="16" width="5" height="5" rx="1"/><rect x="23" y="16" width="5" height="5" rx="1"/><rect x="30" y="16" width="5" height="5" rx="1"/><rect x="13" y="24" width="18" height="4" rx="1"/></g></svg>
           <h3>Accessible, headless, exportable</h3>
           <p>Keyboard navigation, a screen-reader label with every value at the cursor, PNG export. The store, engine and renderer are plain TypeScript you can run without the view.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="signals">
+    <div class="wrap">
+      <h2>Logs, traces and profiles, too</h2>
+      <p class="sub">The other signals on the same canvases and the same theme, linked to each other: a log line opens its trace, a heatmap cell opens a request in it. The demo's tabs show each one.</p>
+      <div class="grid two">
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><g><rect x="5" y="16" width="4" height="8" fill="var(--c3)"/><rect x="11" y="13" width="4" height="11" fill="var(--c3)"/><rect x="17" y="9" width="4" height="15" fill="var(--c4)"/><rect x="17" y="18" width="4" height="6" fill="var(--c8)"/><rect x="23" y="14" width="4" height="10" fill="var(--c3)"/><rect x="29" y="15" width="4" height="9" fill="var(--c3)"/><rect x="35" y="12" width="4" height="12" fill="var(--c1)"/></g><g stroke="var(--edge)" stroke-width="2" stroke-linecap="round"><path d="M5 30h34M5 35h26M5 40h30"/></g><path d="M5 30h3M5 35h3M5 40h3" stroke="var(--c8)" stroke-width="2"/></svg>
+          <h3>LogView</h3>
+          <p>Level toggles with counts, search, a stacked volume histogram to drag a time range on, and a virtualized list. Live frames don't rescan: 13 ms at 50,000 lines in NSH's interpreter.</p>
+        </div>
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><g fill="var(--c1)"><rect x="5" y="7" width="34" height="5" rx="1.5"/></g><rect x="9" y="15" width="20" height="5" rx="1.5" fill="var(--c2)"/><rect x="13" y="23" width="8" height="5" rx="1.5" fill="var(--c3)"/><rect x="22" y="23" width="9" height="5" rx="1.5" fill="none" stroke="var(--c8)" stroke-width="1.5"/><rect x="25" y="31" width="12" height="5" rx="1.5" fill="var(--c7)"/><path d="M27 25.5l2 -2 2 2 -2 2z" fill="var(--surface)" stroke="var(--c8)" stroke-width="1"/></svg>
+          <h3>TraceWaterfall</h3>
+          <p>Spans as a tree of bars by service, errors outlined, the critical path underlined, span events marked. An overview to brush a range on; only the rows in view are drawn, at any trace size.</p>
+        </div>
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><rect x="4" y="8" width="36" height="6" fill="#f06a4f"/><rect x="4" y="16" width="24" height="6" fill="#f2a65a"/><rect x="29" y="16" width="11" height="6" fill="#f2c45a"/><rect x="4" y="24" width="12" height="6" fill="#ef8c5c"/><rect x="17" y="24" width="11" height="6" fill="#3987e5" opacity=".75"/><rect x="29" y="24" width="7" height="6" fill="#e34948" opacity=".8"/><rect x="4" y="32" width="8" height="6" fill="#f2b45a"/></svg>
+          <h3>FlameGraph</h3>
+          <p>Zoom to a frame, search, walk it from the keyboard. Pass a <code>baseline</code> for a diff (red grew, blue shrank), or open a function in a <code>SandwichView</code>, between its callers and callees.</p>
+        </div>
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><g opacity=".9"><rect x="5" y="24" width="5" height="10" fill="#9cc3f2"/><rect x="10" y="22" width="5" height="12" fill="#3987e5"/><rect x="15" y="25" width="5" height="9" fill="#9cc3f2"/><rect x="20" y="10" width="5" height="6" fill="#1e5aa8"/><rect x="20" y="22" width="5" height="12" fill="#3987e5"/><rect x="25" y="9" width="5" height="7" fill="#1e5aa8"/><rect x="25" y="23" width="5" height="11" fill="#3987e5"/><rect x="30" y="24" width="5" height="10" fill="#9cc3f2"/><rect x="35" y="23" width="4" height="11" fill="#3987e5"/></g><path d="M5 22l10 -1 5 -10 10 1 5 11 4 0" stroke="var(--c8)" stroke-width="1.5" fill="none"/><path d="M27 7l2.5 2.5 -2.5 2.5 -2.5 -2.5z" fill="var(--surface)" stroke="var(--text)" stroke-width="1"/></svg>
+          <h3>Heatmap</h3>
+          <p>A latency distribution over time with percentile lines: a slow minority shows as its own band where p99 just rises. Exemplars link cells to traces; hours of data sum into columns that fit the screen.</p>
         </div>
       </div>
     </div>
@@ -464,11 +497,11 @@
             <tr><td>Live, 1M kept</td><td>0.41 ms a frame</td><td>0.43 ms</td><td>1073 ms</td><td>124 ms</td><td>1785 ms</td></tr>
             <tr><td>O11y built in</td><td>units, thresholds, annotations, synced panels, follow window</td><td>sync; the rest by plugins</td><td>markLine / markArea, connect</td><td>by plugins</td><td>shapes, annotations</td></tr>
             <tr><td>Accessibility</td><td>keyboard, screen-reader label, values at the cursor</td><td class="n">none built in</td><td>aria description</td><td class="n">none built in</td><td class="n">none built in</td></tr>
-            <tr><td>Chart types</td><td>time series</td><td>time series, bars</td><td>dozens</td><td>many</td><td>dozens</td></tr>
+            <tr><td>Chart types</td><td>time series, latency heatmap, log volume, trace waterfall, flame graph (diff, sandwich)</td><td>time series, bars</td><td>dozens</td><td>many</td><td>dozens</td></tr>
           </tbody>
         </table>
       </div>
-      <p class="note">Honest gaps: one chart type so far, one y axis, and with only a few thousand points on screen uPlot ties it. See the <a href="https://github.com/JetSquirrel/nsh-o11y#roadmap">roadmap</a>: histograms and heatmaps, bars and stacked areas, a trace waterfall.</p>
+      <p class="note">Honest gaps: no bars or stacked areas yet, one y axis, and with only a few thousand points on screen uPlot ties it. See the <a href="https://github.com/JetSquirrel/nsh-o11y#roadmap">roadmap</a>.</p>
     </div>
   </section>
 
