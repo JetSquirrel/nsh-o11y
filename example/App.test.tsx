@@ -105,6 +105,28 @@ test("compare with v2.13: the flame graph becomes a diff with a legend, and back
   expect(app.shows("id:flame-diff-legend")).toBe(false);
 });
 
+test("the sandwich view: the picked function between its callers and callees", async () => {
+  const app = await open("./App.tsx", { width: 1240, height: 860 });
+  await app.waitFor("id:tab-profiles");
+  await app.press("id:tab-profiles");
+  await app.waitFor("id:view-sandwich");
+  await app.press("id:view-sandwich");
+  await app.waitFor("id:sandwich-callers-plot");
+  expect(app.shows("id:sandwich-callees-plot")).toBe(true);
+  expect(app.shows("id:compare")).toBe(false);
+  // The table picks the function; pressing it again keeps it.
+  const pick = app.texts().find((t) => t === "runtime.mallocgc") ? "runtime.mallocgc" : null;
+  expect(pick).not.toBeNull();
+  await app.press("text:runtime.mallocgc");
+  await app.wait(50);
+  await app.press("text:runtime.mallocgc");
+  await app.wait(50);
+  expect(app.texts().filter((t) => t === "runtime.mallocgc").length).toBeGreaterThanOrEqual(2); // the row and the middle
+  expect(app.texts().some((t) => /% of the total$/.test(t))).toBe(true);
+  await app.press("id:view-flame");
+  await app.waitFor("id:flame-plot");
+});
+
 test("the profiles tab: the flame graph and the top functions", async () => {
   const app = await open("./App.tsx", { width: 1240, height: 860, platform: "windows" });
   await app.waitFor("id:tab-profiles");

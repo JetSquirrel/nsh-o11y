@@ -187,6 +187,11 @@ text, or `{ name, value?, children? }`), `unit`, `direction`, `rowHeight`, `colo
 blue where it shrank (changes under a quarter of a point stay neutral: sampling noise), and the tooltip gives both
 shares. The example compares v2.14 with v2.13 and shows the pricing regression.
 
+`<SandwichView profile={profile} fn="runtime.mallocgc" />` puts one function between what called it (a flame
+growing up into it, from every call site) and what it called (its subtrees from every call, merged): the frames
+scattered across the full graph read as two trees. `sandwichProfile(root, name)` gives both halves headless,
+recursion counted once. In the example, the Sandwich view shows the function picked in the top-functions table.
+
 ## Rust backend
 
 ```ts
@@ -226,6 +231,7 @@ src/
   profile.ts          call trees from folded stacks, stacks or trees; top functions; search
   flame.ts            the flame graph's engine and renderer
   FlameGraph.tsx      the flame graph component
+  SandwichView.tsx    a function between its callers and callees
 native/src/
   lib.rs              the native module: SeriesBuffer
   lod.rs              the pyramid and the tracer in Rust
@@ -331,7 +337,6 @@ cd bench/web && bun install && bun run.ts     # every library on the same scenar
 - More O11y panels on the same engine: histograms / heatmaps (latency distributions), bar and stacked area,
   exemplars on time series linking to traces.
 - Traces: comparing two traces.
-- Profiles: a sandwich view (a function's callers and callees).
 - Logs in the Rust backend, for tens of millions of lines.
 - A second y axis.
 - Keep the newest frame's paths in Rust and hand the canvas a native path handle instead of SVG text.

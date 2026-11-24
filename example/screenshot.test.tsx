@@ -46,4 +46,8 @@ test("screenshots: logs, a trace, a profile", async () => {
   await app.press("id:compare");
   await app.wait(500);
   await shot("profiles-diff");
+  await app.press("id:view-sandwich");
+  await app.press("text:runtime.mallocgc");
+  await app.wait(500);
+  await shot("profiles-sandwich");
 }, 60_000);

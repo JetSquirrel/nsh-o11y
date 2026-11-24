@@ -42,6 +42,7 @@ export { TraceWaterfall, type TraceWaterfallProps } from "./TraceWaterfall";
 export { TraceModel, type Span, type SpanEvent, type WaterfallRow } from "./traces";
 export { WaterfallEngine, renderWaterfall, renderWaterfallOverlay, type WaterfallOptions } from "./waterfall";
 export { FlameGraph, type FlameGraphProps } from "./FlameGraph";
+export { SandwichView, type SandwichViewProps } from "./SandwichView";
 export {
   profileFromFolded,
   profileFromStacks,
@@ -52,6 +53,7 @@ export {
   matchedValue,
   diffProfiles,
   diffRatio,
+  sandwichProfile,
   type ProfileNode,
   type ProfileTreeInput,
   type FunctionTotal,

@@ -65,6 +65,58 @@ export function diffRatio(n: ProfileNode, root: ProfileNode): number {
   return m > 0 ? (a - b) / m : 0;
 }
 
+/**
+ * A function's sandwich: `callers`, an inverted tree rooted at the function whose children are the
+ * functions that called it, then theirs, out to the root's children; and `callees`, the function's own
+ * subtrees from every place it was called, merged. Both roots hold the function's total. Recursion counts
+ * once: only the outermost call of each stack is taken. Null when no frame has that name.
+ */
+export function sandwichProfile(root: ProfileNode, name: string): { callers: ProfileNode; callees: ProfileNode } | null {
+  const outer: ProfileNode[] = [];
+  const stack: ProfileNode[] = [root];
+  while (stack.length) {
+    const n = stack.pop()!;
+    if (n.parent && n.name === name) outer.push(n);
+    else for (const c of n.children) stack.push(c);
+  }
+  if (!outer.length) return null;
+  const callers = node(name, null);
+  const callees = node(name, null);
+  const kids = new Map<ProfileNode, Map<string, ProfileNode>>();
+  const child = (p: ProfileNode, nm: string) => {
+    let m = kids.get(p);
+    if (!m) kids.set(p, (m = new Map()));
+    let c = m.get(nm);
+    if (!c) {
+      c = node(nm, p);
+      m.set(nm, c);
+      p.children.push(c);
+    }
+    return c;
+  };
+  const merge = (from: ProfileNode, into: ProfileNode) => {
+    into.value += from.value;
+    into.self += from.self;
+    for (const c of from.children) merge(c, child(into, c.name));
+  };
+  for (const n of outer) {
+    // Callers: up from the call to the profile's root (left out: it is "all", not a function).
+    callers.value += n.value;
+    callers.self += n.value;
+    let at = callers;
+    for (let p = n.parent; p && p.parent; p = p.parent) {
+      at.self -= n.value;
+      at = child(at, p.name);
+      at.value += n.value;
+      at.self += n.value;
+    }
+    merge(n, callees);
+  }
+  sortProfile(callers, "value");
+  sortProfile(callees, "value");
+  return { callers, callees };
+}
+
 /** A tree as a profiler might give it: `value` may be left out (the sum of the children's). */
 export interface ProfileTreeInput {
   name: string;

@@ -1,6 +1,7 @@
 import { List, computed, mount, signal, Text, View, windowSize, type JSX } from "nsh";
 import {
   FlameGraph,
+  SandwichView,
   LogStore,
   LogView,
   TimeSeriesChart,
@@ -169,6 +170,8 @@ function App() {
   const highlight = signal("");
   // The release before, for a diff: made the first time it is asked for.
   const compare = signal(false);
+  // The sandwich view: the function picked in the table (or the top one), its callers and callees.
+  const sandwich = signal(false);
   let baselineProfile: ReturnType<typeof profileFromFolded> | undefined;
   const baseline = () => (baselineProfile ??= profileFromFolded(checkoutProfile(4, 20_000, "v2.13")));
 
@@ -323,20 +326,28 @@ function App() {
           <Text class="text-sm font-medium text-foreground" style={{ flex: 1 }}>
             {`CPU profile · v2.14 · ${profile.value.toLocaleString()} samples`}
           </Text>
-          <Button
-            label="Compare with v2.13"
-            active={compare()}
-            onPress={() => compare.update((v) => !v)}
-            testID="compare"
-          />
+          <Button label="Flame graph" active={!sandwich()} onPress={() => sandwich.set(false)} testID="view-flame" />
+          <Button label="Sandwich" active={sandwich()} onPress={() => sandwich.set(true)} testID="view-sandwich" />
+          {sandwich() ? null : (
+            <Button
+              label="Compare with v2.13"
+              active={compare()}
+              onPress={() => compare.update((v) => !v)}
+              testID="compare"
+            />
+          )}
         </View>
-        <FlameGraph
-          testID="flame"
-          profile={profile}
-          baseline={compare() ? baseline() : undefined}
-          highlight={highlight()}
-          style={{ flex: 1 }}
-        />
+        {sandwich() ? (
+          <SandwichView testID="sandwich" profile={profile} fn={highlight() || top[0].name} style={{ flex: 1 }} />
+        ) : (
+          <FlameGraph
+            testID="flame"
+            profile={profile}
+            baseline={compare() ? baseline() : undefined}
+            highlight={highlight()}
+            style={{ flex: 1 }}
+          />
+        )}
       </Panel>
       <View class="rounded-xl border border-border bg-card px-4 py-3" style={{ width: wide() ? 340 : undefined, gap: 2 }}>
         <View class="flex-row" style={{ gap: 8, marginBottom: 4 }}>
@@ -356,7 +367,7 @@ function App() {
               role="button"
               testID={`top-${i()}`}
               accessibilityState={{ selected: highlight() === f().name }}
-              onPress={() => highlight.set(highlight() === f().name ? "" : f().name)}
+              onPress={() => highlight.set(!sandwich() && highlight() === f().name ? "" : f().name)}
               class={`rounded px-1 py-1 ${highlight() === f().name ? "bg-accent" : "hover:bg-accent"}`}
               style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
             >

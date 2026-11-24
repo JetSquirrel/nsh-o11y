@@ -5,7 +5,7 @@ import { LogStore, LOG_LEVELS, type LogEntry, type LogLevel } from "../src/logs"
 import { LogVolumeEngine, renderLogVolume, renderLogVolumeOverlay } from "../src/logvolume";
 import { TraceModel, type Span } from "../src/traces";
 import { WaterfallEngine, renderWaterfall, renderWaterfallOverlay } from "../src/waterfall";
-import { ancestry, diffProfiles, diffRatio, matchedValue, profileFromFolded, profileFromTree, topFunctions } from "../src/profile";
+import { ancestry, diffProfiles, diffRatio, matchedValue, profileFromFolded, profileFromTree, sandwichProfile, topFunctions } from "../src/profile";
 import { FlameEngine, colorKey, diffColor, renderFlame, renderFlameOverlay } from "../src/flame";
 import { fitText } from "../src/draw";
 import { timeStep } from "../src/scale";
@@ -370,6 +370,30 @@ describe("profiles", () => {
     };
     expect(diffRatio(find("checkout/pricing.applyRules"), d)).toBeGreaterThan(0.5);
     expect(diffRatio(find("encoding/json.(*Encoder).Encode"), d)).toBeLessThan(-0.2);
+  });
+
+  test("a sandwich: callers inverted up to the root, callees merged, recursion once", () => {
+    const p = profileFromFolded(
+      ["main;handle;alloc 5", "main;handle;alloc;zero 3", "main;gc;alloc 2", "main;handle;alloc;alloc;zero 4", "main;other 9"].join("\n"),
+    );
+    const s = sandwichProfile(p, "alloc")!;
+    // Every sample with alloc on its stack, counted once: 5 + 3 + 2 + 4.
+    expect(s.callers.value).toBe(14);
+    expect(s.callees.value).toBe(14);
+    // Callers: handle (12) then gc (2), each called by main.
+    expect(s.callers.children.map((c) => [c.name, c.value])).toEqual([["handle", 12], ["gc", 2]]);
+    expect(s.callers.children[0].children[0].name).toBe("main");
+    expect(s.callers.children[0].children[0].self).toBe(12); // the outermost caller holds it
+    expect(s.callers.self).toBe(0);
+    // Callees: zero (3) and the recursive alloc (4), alloc's own time 5 + 2.
+    expect(s.callees.self).toBe(7);
+    expect(s.callees.children.map((c) => [c.name, c.value]).sort()).toEqual([["alloc", 4], ["zero", 3]]);
+    expect(sandwichProfile(p, "nope")).toBeNull();
+    // The real profile: mallocgc is called from three places.
+    const real = profileFromFolded(checkoutProfile(3, 5000));
+    const m = sandwichProfile(real, "runtime.mallocgc")!;
+    expect(m.callers.children.length).toBeGreaterThanOrEqual(3);
+    expect(m.callers.value).toBe(topFunctions(real).find((f) => f.name === "runtime.mallocgc")!.total);
   });
 
   test("color keys are modules", () => {
