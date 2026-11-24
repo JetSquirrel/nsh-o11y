@@ -1,0 +1,14 @@
+const host=globalThis.__nsh_browser_realm.modules;
+let e0=host.get("nsh")["Canvas"];export{e0 as "Canvas"};
+let e1=host.get("nsh")["OffscreenCanvas"];export{e1 as "OffscreenCanvas"};
+let e2=host.get("nsh")["Path2D"];export{e2 as "Path2D"};
+let e3=host.get("nsh")["cleanup"];export{e3 as "cleanup"};
+let e4=host.get("nsh")["colorScheme"];export{e4 as "colorScheme"};
+let e5=host.get("nsh")["computed"];export{e5 as "computed"};
+let e6=host.get("nsh")["effect"];export{e6 as "effect"};
+let e7=host.get("nsh")["mount"];export{e7 as "mount"};
+let e8=host.get("nsh")["signal"];export{e8 as "signal"};
+let e9=host.get("nsh")["token"];export{e9 as "token"};
+let e10=host.get("nsh")["untracked"];export{e10 as "untracked"};
+let e11=host.get("nsh")["windowSize"];export{e11 as "windowSize"};
+globalThis.__nsh_browser_realm.watch(()=>{e0=host.get("nsh")["Canvas"];e1=host.get("nsh")["OffscreenCanvas"];e2=host.get("nsh")["Path2D"];e3=host.get("nsh")["cleanup"];e4=host.get("nsh")["colorScheme"];e5=host.get("nsh")["computed"];e6=host.get("nsh")["effect"];e7=host.get("nsh")["mount"];e8=host.get("nsh")["signal"];e9=host.get("nsh")["token"];e10=host.get("nsh")["untracked"];e11=host.get("nsh")["windowSize"];});

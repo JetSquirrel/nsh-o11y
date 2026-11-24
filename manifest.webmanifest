@@ -1,0 +1,11 @@
+{
+  "id": "dev.nsho11y.example",
+  "name": "nsh-o11y",
+  "short_name": "nsh-o11y",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": []
+}

@@ -1,0 +1,11 @@
+const host=globalThis.__nsh_browser_realm.modules;
+let e0=host.get("nsh:rt")["append"];export{e0 as "append"};
+let e1=host.get("nsh:rt")["bindProp"];export{e1 as "bindProp"};
+let e2=host.get("nsh:rt")["component"];export{e2 as "component"};
+let e3=host.get("nsh:rt")["each"];export{e3 as "each"};
+let e4=host.get("nsh:rt")["element"];export{e4 as "element"};
+let e5=host.get("nsh:rt")["insert"];export{e5 as "insert"};
+let e6=host.get("nsh:rt")["prop"];export{e6 as "prop"};
+let e7=host.get("nsh:rt")["setup"];export{e7 as "setup"};
+let e8=host.get("nsh:rt")["text"];export{e8 as "text"};
+globalThis.__nsh_browser_realm.watch(()=>{e0=host.get("nsh:rt")["append"];e1=host.get("nsh:rt")["bindProp"];e2=host.get("nsh:rt")["component"];e3=host.get("nsh:rt")["each"];e4=host.get("nsh:rt")["element"];e5=host.get("nsh:rt")["insert"];e6=host.get("nsh:rt")["prop"];e7=host.get("nsh:rt")["setup"];e8=host.get("nsh:rt")["text"];});
