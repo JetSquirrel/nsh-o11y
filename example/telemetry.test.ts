@@ -5,7 +5,7 @@ import { LogStore, LOG_LEVELS, type LogEntry, type LogLevel } from "../src/logs"
 import { LogVolumeEngine, renderLogVolume, renderLogVolumeOverlay } from "../src/logvolume";
 import { TraceModel, type Span } from "../src/traces";
 import { WaterfallEngine, renderWaterfall, renderWaterfallOverlay } from "../src/waterfall";
-import { ancestry, diffProfiles, diffRatio, matchedValue, profileFromFolded, profileFromTree, sandwichProfile, topFunctions } from "../src/profile";
+import { ancestry, diffProfiles, diffRatio, matchedValue, profileFromFolded, profileFromFoldedAsync, profileFromTree, sandwichProfile, topFunctions } from "../src/profile";
 import { FlameEngine, colorKey, diffColor, renderFlame, renderFlameOverlay } from "../src/flame";
 import { fitText } from "../src/draw";
 import { timeStep } from "../src/scale";
@@ -501,6 +501,23 @@ describe("profiles", () => {
     expect(top.find((t) => t.name === "g")!.total).toBe(9);
     expect(matchedValue(p, "G")).toBe(9);
     expect(matchedValue(p, "")).toBe(0);
+  });
+
+  test("the async parse, in slices, builds the same tree", async () => {
+    const text = checkoutProfile(3, 5000);
+    const sync = profileFromFolded(text);
+    let pauses = 0;
+    const seen: number[] = [];
+    const tree = await profileFromFoldedAsync(text, {
+      linesPerSlice: 5,
+      yieldTo: async () => void pauses++,
+      onProgress: (p) => seen.push(p),
+    });
+    const flat = (n: ReturnType<typeof profileFromFolded>): string[] => [`${n.depth}:${n.name}:${n.value}:${n.self}`, ...n.children.flatMap(flat)];
+    expect(flat(tree)).toEqual(flat(sync));
+    expect(pauses).toBe(Math.ceil(text.split("\n").length / 5) - 1); // a pause between each slice
+    expect(seen[seen.length - 1]).toBe(1);
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
   });
 
   test("the generated profile has every sample", () => {

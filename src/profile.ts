@@ -178,44 +178,91 @@ export function profileFromStacks(stacks: Iterable<{ frames: readonly string[]; 
   return root;
 }
 
+/** Folded-stack lines into a tree, a slice of lines at a time (so a big profile can yield between slices). */
+class FoldedParser {
+  readonly root: ProfileNode;
+  private tree = new TreeBuilder();
+  private pos = 0;
+
+  constructor(private text: string, rootName: string) {
+    this.root = node(rootName, null);
+  }
+
+  /** The share of the text read, 0 to 1. */
+  get progress() {
+    return this.text.length ? Math.min(1, this.pos / this.text.length) : 1;
+  }
+
+  get done() {
+    return this.pos >= this.text.length;
+  }
+
+  /** Parses up to `lines` more lines. */
+  step(lines = Infinity) {
+    const { text, root, tree } = this;
+    const n = text.length;
+    let pos = this.pos;
+    for (let k = 0; k < lines && pos < n; k++) {
+      let end = text.indexOf("\n", pos);
+      if (end < 0) end = n;
+      let a = pos;
+      let b = end;
+      pos = end + 1;
+      while (a < b && text.charCodeAt(a) <= 32) a++;
+      while (b > a && text.charCodeAt(b - 1) <= 32) b--;
+      if (a === b || text.charCodeAt(a) === 35 /* # */) continue;
+      const sp = text.lastIndexOf(" ", b - 1);
+      if (sp <= a) continue;
+      const value = Number(text.slice(sp + 1, b));
+      if (!(value > 0)) continue;
+      root.value += value;
+      let at = root;
+      let f = a;
+      while (f < sp) {
+        let semi = text.indexOf(";", f);
+        if (semi < 0 || semi > sp) semi = sp;
+        if (semi > f) {
+          at = tree.child(at, text.slice(f, semi));
+          at.value += value;
+        }
+        f = semi + 1;
+      }
+      at.self += value;
+    }
+    this.pos = pos;
+  }
+}
+
 /**
  * Parses folded stacks: one `frame;frame;frame value` per line. Each line is walked in place (no arrays of
  * frames), straight into the tree.
  */
 export function profileFromFolded(text: string, rootName = "all"): ProfileNode {
-  const root = node(rootName, null);
-  const tree = new TreeBuilder();
-  let pos = 0;
-  const n = text.length;
-  while (pos < n) {
-    let end = text.indexOf("\n", pos);
-    if (end < 0) end = n;
-    let a = pos;
-    let b = end;
-    pos = end + 1;
-    while (a < b && text.charCodeAt(a) <= 32) a++;
-    while (b > a && text.charCodeAt(b - 1) <= 32) b--;
-    if (a === b || text.charCodeAt(a) === 35 /* # */) continue;
-    const sp = text.lastIndexOf(" ", b - 1);
-    if (sp <= a) continue;
-    const value = Number(text.slice(sp + 1, b));
-    if (!(value > 0)) continue;
-    root.value += value;
-    let at = root;
-    let f = a;
-    while (f < sp) {
-      let semi = text.indexOf(";", f);
-      if (semi < 0 || semi > sp) semi = sp;
-      if (semi > f) {
-        at = tree.child(at, text.slice(f, semi));
-        at.value += value;
-      }
-      f = semi + 1;
-    }
-    at.self += value;
+  const p = new FoldedParser(text, rootName);
+  p.step();
+  sortProfile(p.root, "value");
+  return p.root;
+}
+
+/**
+ * `profileFromFolded` in slices of `linesPerSlice` lines (default 2000), awaiting `yieldTo` between them (by
+ * default a zero-delay timer). NSH stops a call into JS after 2 s and runs QuickJS, where a profile of tens
+ * of thousands of stacks can take longer: this keeps each call short and the app responsive while it loads.
+ * `onProgress` hears the share of the text read, 0 to 1.
+ */
+export async function profileFromFoldedAsync(
+  text: string,
+  options: { rootName?: string; linesPerSlice?: number; yieldTo?: () => Promise<unknown>; onProgress?: (done: number) => void } = {},
+): Promise<ProfileNode> {
+  const p = new FoldedParser(text, options.rootName ?? "all");
+  const pause = options.yieldTo ?? (() => new Promise((r) => setTimeout(r, 0)));
+  while (!p.done) {
+    p.step(options.linesPerSlice ?? 2000);
+    options.onProgress?.(p.done ? 1 : p.progress);
+    if (!p.done) await pause();
   }
-  sortProfile(root, "value");
-  return root;
+  sortProfile(p.root, "value");
+  return p.root;
 }
 
 /** Builds the tree from nested `{ name, value?, children? }`. */

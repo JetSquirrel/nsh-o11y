@@ -203,7 +203,8 @@ frames (toward the root, to the biggest callee, and along a row), Enter zooms to
 up a level, and screen readers hear the frame's name, total and self. Pressing any chart gives it the keyboard.
 Searching greys out frames that don't
 match and shows the share of samples that do. Frames under a third of a point wide are never laid out, so
-very large profiles stay quick. `profileFromStacks`, `profileFromTree`, `topFunctions` (self and total per
+very large profiles stay quick. `profileFromFoldedAsync(text, { onProgress })` parses in slices with a pause
+between them, so a profile too big for one call into JS (NSH stops one after 2 s) still loads. `profileFromStacks`, `profileFromTree`, `topFunctions` (self and total per
 function, recursion counted once) and `matchedValue` work headless. Props: `profile` (a `ProfileNode`, folded
 text, or `{ name, value?, children? }`), `unit`, `direction`, `rowHeight`, `colorBy` (`"module"` / `"name"`),
 `toolbar`, `highlight`, `onSelect`, and `baseline`: a profile to compare with. Then the graph is a diff, as
@@ -360,6 +361,7 @@ In QuickJS (`nsh test perf/telemetry.test.ts`), mean / p95 per frame, or once wh
 | Waterfall: scroll frame | 50,000 spans | 2.6 / 3.0 ms |
 | Flame graph frame (layout + draw) | 20,000 stacks | 21 / 23 ms |
 | `profileFromFolded` | 20,000 stacks | 1200 ms |
+| `profileFromFoldedAsync`, 25 slices of about 160 ms | 50,000 stacks | 3.9 s |
 | Heatmap frame, 48 buckets | 5 min of 1 s columns | 28 / 30 ms |
 | | 1 h of 1 s columns | 79 / 84 ms |
 

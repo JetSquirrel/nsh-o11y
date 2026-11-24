@@ -72,6 +72,8 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
   // The plot canvas: a press gives it the keyboard, as Tab would.
   let plotRef: ViewRef | undefined;
   let lastHover = 0;
+  // The selection (or the trace) changed since the rows were last laid out: scroll it into view then.
+  let revealPending = false;
 
   const theme = computed<ChartTheme>(() => resolveTheme(props.colors, props.fontFamily, props.fontSize));
   const model = computed<TraceModel>(() => {
@@ -90,6 +92,7 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
       e.zoomed = false;
       e.setModel(m, palette);
       e.scrollY = 0;
+      revealPending = true;
       redraw();
     });
   });
@@ -99,7 +102,9 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
       e.setRows(r);
       const id = selectedId();
       e.selected = id ? r.findIndex((row) => row.span.spanId === id) : -1;
-      if (e.selected >= 0) e.reveal(e.selected);
+      // Scroll to the selection only when it or the trace is new: folding a span keeps the view where it is.
+      if (revealPending && e.selected >= 0) e.reveal(e.selected);
+      revealPending = false;
       redraw();
     });
   });
@@ -120,15 +125,19 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
   });
 
   function setSelected(id: string | null, notify = true) {
+    // Set first: unfolding below lays the rows out again, and that reads which row is selected.
+    selectedId.set(id);
     if (id) {
       // Unfold the ancestors so the row shows.
       const m = untracked(model);
       const open = new Set(untracked(collapsed));
       let changed = false;
       for (let p = m.span(id) && m.parent(m.span(id)!); p; p = m.parent(p)) if (open.delete(p.spanId)) changed = true;
-      if (changed) collapsed.set(open);
+      if (changed) {
+        revealPending = true;
+        collapsed.set(open);
+      }
     }
-    selectedId.set(id);
     const r = untracked(rows);
     e.selected = id ? r.findIndex((row) => row.span.spanId === id) : -1;
     if (e.selected >= 0) e.reveal(e.selected);

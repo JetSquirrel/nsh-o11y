@@ -65,6 +65,7 @@ export {
   matchedValue,
   diffProfiles,
   diffRatio,
+  profileFromFoldedAsync,
   sandwichProfile,
   type ProfileNode,
   type ProfileTreeInput,

@@ -11,7 +11,7 @@ import { FlameEngine, renderFlame, renderFlameOverlay } from "../src/flame";
 import { LogStore, LOG_LEVELS, type LogEntry } from "../src/logs";
 import { LogVolumeEngine, renderLogVolume } from "../src/logvolume";
 import { PALETTE_LIGHT } from "../src/palette";
-import { profileFromFolded } from "../src/profile";
+import { profileFromFolded, profileFromFoldedAsync } from "../src/profile";
 import type { Ctx2D } from "../src/render";
 import { TraceModel, type Span } from "../src/traces";
 import type { ChartTheme } from "../src/types";
@@ -198,6 +198,18 @@ describe("telemetry in QuickJS", () => {
         renderFlameOverlay(cx, e, THEME);
       }));
     }
+    print();
+  }, 300_000);
+
+  test("a big profile, parsed in slices", async () => {
+    // Past what one call into JS may take (2 s): the async parse yields between slices of lines.
+    const text = await folded(50_000, 24);
+    const t0 = performance.now();
+    let slices = 0;
+    const p = await profileFromFoldedAsync(text, { onProgress: () => slices++ });
+    row("profileFromFoldedAsync (in 2000-line slices)", "50,000 stacks", performance.now() - t0);
+    rows.push(`| … slices, the longest call into JS ≈ one slice | ${slices} | |`);
+    expect(p.children.length).toBeGreaterThan(0);
     print();
   }, 300_000);
 
