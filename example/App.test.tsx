@@ -12,6 +12,19 @@ test("shows the dashboard: four charts with their legends", async () => {
   expect(texts.some((t) => /\d+(\.\d+)?%$/.test(t))).toBe(true);
 });
 
+test("latency as a heatmap: switch, hover, switch back", async () => {
+  const app = await open("./App.tsx", { width: 1240, height: 860, platform: "windows" });
+  await app.waitFor("id:latency-heat");
+  await app.press("id:latency-heat");
+  await app.waitFor("id:heatmap-plot");
+  expect(app.shows("id:latency-plot")).toBe(false);
+  expect(app.texts()).toContain("p99");
+  expect(app.accessibility("id:heatmap-plot")?.label ?? "").toMatch(/p50 [\d.]+ ms, p99 [\d.]+ ms in the newest column/);
+  await app.hover("id:heatmap-plot");
+  await app.press("id:latency-lines");
+  await app.waitFor("id:latency-plot");
+});
+
 test("the legend toggles a series", async () => {
   const app = await open("./App.tsx", { width: 1240, height: 860 });
   await app.waitFor("id:latency-legend-2");

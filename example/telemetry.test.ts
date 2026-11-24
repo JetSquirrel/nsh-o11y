@@ -12,7 +12,8 @@ import { timeStep } from "../src/scale";
 import { PALETTE_LIGHT } from "../src/palette";
 import type { Ctx2D } from "../src/render";
 import type { ChartTheme } from "../src/types";
-import { rng } from "./data";
+import { requestLatencies, rng } from "./data";
+import { HeatmapEngine, HeatmapStore, heatRamp, renderHeatmap, renderHeatmapOverlay } from "../src/distribution";
 import { checkoutProfile, checkoutTrace, serviceLogs } from "./telemetry";
 
 const THEME: ChartTheme = {
@@ -284,6 +285,75 @@ describe("traces", () => {
     renderWaterfall(counting as Ctx2D, e, THEME, PATH);
     expect(texts).toBeLessThan(100);
     expect(Date.now() - t0).toBeLessThan(1000);
+  });
+});
+
+describe("heatmap", () => {
+  test("buckets, columns, quantiles", () => {
+    const s = new HeatmapStore({ step: 1000, min: 1, max: 1000, buckets: 30 });
+    expect(s.edges[0]).toBe(1);
+    expect(Math.abs(s.edges[30] - 1000)).toBeLessThan(1e-9);
+    expect(Math.abs(s.edges[10] - 10)).toBeLessThan(1e-9); // log: a decade per 10 buckets
+    expect(s.bucketOf(0.1)).toBe(0); // below the range: the first bucket
+    expect(s.bucketOf(1e6)).toBe(29); // above: the last
+    // 1000 values spread evenly in log space over 1..1000: the median is near 31.6.
+    const vals = Array.from({ length: 1000 }, (_, i) => Math.pow(1000, (i + 0.5) / 1000));
+    s.add(5_500, vals);
+    s.add(2_100, 50); // out of order: a column before
+    expect(s.length()).toBe(2);
+    expect(s.column(0).time).toBe(2_000);
+    expect(s.column(1).total).toBe(1000);
+    expect(Math.abs(s.quantile(1, 0.5) / 31.62 - 1)).toBeLessThan(0.05);
+    expect(Math.abs(s.quantile(1, 0.99) / 933 - 1)).toBeLessThan(0.05);
+    expect(s.quantile(0, 0.5)).toBeGreaterThan(30);
+    expect(s.quantile(0, 0.5)).toBeLessThan(70);
+    expect(Number.isNaN(s.quantile(5, 0.5))).toBe(true);
+    s.addCounts(5_000, new Float64Array(30).fill(1));
+    expect(s.column(1).total).toBe(1030);
+    const lin = new HeatmapStore({ scale: "linear", min: 0, max: 100, buckets: 10 });
+    expect(lin.bucketOf(55)).toBe(5);
+  });
+
+  test("the oldest columns are dropped", () => {
+    const s = new HeatmapStore({ step: 1, maxColumns: 20 });
+    for (let t = 0; t < 100; t++) s.add(t, 10);
+    expect(s.length()).toBe(20);
+    expect(s.column(0).time).toBe(80);
+  });
+
+  test("the engine finds cells, colors by count, reads percentiles, draws", () => {
+    const s = new HeatmapStore({ step: 1000, min: 5, max: 5000, buckets: 48 });
+    const draw = requestLatencies(20, 3);
+    for (let t = 0; t < 120_000; t += 100) s.add(t, draw({ p50: 40, p99: 300 }, t > 60_000 && t < 80_000 ? 0.1 : 0.004));
+    const e = new HeatmapEngine();
+    e.store = s;
+    e.setSize(600, 200);
+    e.update(0, 120_000);
+    expect(e.i1 - e.i0).toBe(120);
+    expect(e.maxCount).toBeGreaterThan(0);
+    // The median's cell is busy, a cell far above it is empty.
+    const y50 = e.toPy(40);
+    const busy = e.cellAt(e.toPx(30_500), y50)!;
+    expect(s.column(busy.col).counts[busy.bucket]).toBeGreaterThan(0);
+    expect(e.colorOf(s.column(busy.col).counts[busy.bucket])).not.toBeNull();
+    expect(e.colorOf(0)).toBeNull();
+    const lines = e.cellLines(busy);
+    expect(lines.some((l) => l.text.startsWith("p50 "))).toBe(true);
+    expect(lines.some((l) => l.text.startsWith("p99 "))).toBe(true);
+    // During the incident, the slow band lifts p99 past 600 ms; before it, it stays well under.
+    const col = (t: number) => s.lower(t);
+    expect(s.quantile(col(70_000), 0.99)).toBeGreaterThan(600);
+    expect(s.quantile(col(30_000), 0.99)).toBeLessThan(600);
+    expect(e.cellAt(5, 5)).toBeNull();
+    const cx = ctx(600, 200);
+    e.measure = (t) => cx.measureText(t).width;
+    e.hover = busy;
+    renderHeatmap(cx, e, THEME, PATH);
+    renderHeatmapOverlay(cx, e, THEME);
+    e.hover = null;
+    e.syncTime = 50_000;
+    renderHeatmapOverlay(cx, e, THEME);
+    expect(heatRamp(true)[0]).not.toBe(heatRamp(false)[0]);
   });
 });
 

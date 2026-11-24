@@ -16,6 +16,10 @@ test("screenshots: at rest, hovering, zoomed", async () => {
     }
   };
   await shot("dashboard");
+  await app.press("id:latency-heat");
+  await app.wait(500);
+  await shot("dashboard-heatmap");
+  await app.press("id:latency-lines");
   await app.drag("id:big-plot", { x: 200, y: 0 });
   await app.wait(500);
   await shot("dashboard-zoomed");

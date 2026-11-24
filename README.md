@@ -113,6 +113,25 @@ chart.setRange(t0, t1);  chart.zoom(2);  chart.back();  chart.reset();  chart.to
 const png = await chart.toImage({ scale: 2 });          // Blob
 ```
 
+## Heatmap
+
+```tsx
+import { Heatmap, HeatmapStore } from "nsh-o11y";
+
+const latency = new HeatmapStore({ step: 1000, min: 5, max: 5000, buckets: 48, maxColumns: 600 });
+latency.add(Date.now(), requestDurationMs);          // one observation, or an array of them
+
+<Heatmap data={latency} unit="ms" window={5 * 60_000} sync={sync} style={{ flex: 1 }} />
+```
+
+Percentile lines say p99 rose; a heatmap shows why. It might be a second band of slow requests, or everything
+shifting up. Each column is `step` ms. Each row is a bucket of values, log-spaced by default, so latencies from
+milliseconds to seconds get equal room. A cell's color is its count on a log scale. Percentile lines (`percentiles`,
+default p50 and p99) are read from the buckets. Hover a cell for its count, its share of the column and the
+column's percentiles. With `sync`, the heatmap shares the crosshair with linked charts and follows their zoom.
+`addCounts(t, counts)` takes pre-bucketed histograms. In the example, the Latency panel switches to a heatmap,
+and the incident shows as a separate band at about 1 s that the p99 line jumps to.
+
 ## Logs, traces and profiles
 
 The example's **Logs**, **Traces** and **Profiles** tabs show all three components with the metrics: a log line's
@@ -232,6 +251,8 @@ src/
   flame.ts            the flame graph's engine and renderer
   FlameGraph.tsx      the flame graph component
   SandwichView.tsx    a function between its callers and callees
+  distribution.ts     HeatmapStore: observations bucketed over time and value, quantiles; its engine and renderer
+  Heatmap.tsx         the heatmap component
 native/src/
   lib.rs              the native module: SeriesBuffer
   lod.rs              the pyramid and the tracer in Rust
@@ -334,8 +355,8 @@ cd bench/web && bun install && bun run.ts     # every library on the same scenar
 
 ## Roadmap
 
-- More O11y panels on the same engine: histograms / heatmaps (latency distributions), bar and stacked area,
-  exemplars on time series linking to traces.
+- More O11y panels on the same engine: bar and stacked area, exemplars on heatmaps and time series linking to
+  traces.
 - Traces: comparing two traces.
 - Logs in the Rust backend, for tens of millions of lines.
 - A second y axis.

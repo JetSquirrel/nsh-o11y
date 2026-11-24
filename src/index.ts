@@ -43,6 +43,16 @@ export { TraceModel, type Span, type SpanEvent, type WaterfallRow } from "./trac
 export { WaterfallEngine, renderWaterfall, renderWaterfallOverlay, type WaterfallOptions } from "./waterfall";
 export { FlameGraph, type FlameGraphProps } from "./FlameGraph";
 export { SandwichView, type SandwichViewProps } from "./SandwichView";
+export { Heatmap, type HeatmapProps } from "./Heatmap";
+export {
+  HeatmapStore,
+  HeatmapEngine,
+  renderHeatmap,
+  renderHeatmapOverlay,
+  heatRamp,
+  type HeatmapOptions,
+  type HeatmapColumn,
+} from "./distribution";
 export {
   profileFromFolded,
   profileFromStacks,

@@ -1,6 +1,8 @@
 import { List, computed, mount, signal, Text, View, windowSize, type JSX } from "nsh";
 import {
   FlameGraph,
+  Heatmap,
+  HeatmapStore,
   SandwichView,
   LogStore,
   LogView,
@@ -17,7 +19,7 @@ import {
   type Annotation,
   type Span,
 } from "nsh-o11y";
-import { randomWalkChunks, serviceMetrics } from "./data";
+import { randomWalkChunks, requestLatencies, serviceMetrics } from "./data";
 import { checkoutProfile, serviceLogs } from "./telemetry";
 
 type Tab = "metrics" | "logs" | "traces" | "profiles";
@@ -38,6 +40,21 @@ function Button(props: { label: string; onPress: () => void; active?: boolean; t
       class={`rounded-md px-3 py-1.5 ${props.active ? "bg-primary" : "bg-secondary hover:bg-accent active:bg-accent"}`}
     >
       <Text class={`text-sm ${props.active ? "text-primary-foreground" : "text-secondary-foreground"}`}>{props.label}</Text>
+    </View>
+  );
+}
+
+/** A small toggle in a panel's header. */
+function Segment(props: { label: string; active: boolean; onPress: () => void; testID?: string }) {
+  return (
+    <View
+      role="tab"
+      testID={props.testID}
+      accessibilityState={{ selected: props.active }}
+      onPress={props.onPress}
+      class={`rounded-md px-2 py-0.5 ${props.active ? "bg-secondary" : "hover:bg-accent"}`}
+    >
+      <Text class={`text-xs ${props.active ? "text-foreground font-medium" : "text-muted-foreground"}`}>{props.label}</Text>
     </View>
   );
 }
@@ -97,11 +114,16 @@ function App() {
   const annotations = signal<Annotation[]>([]);
   let t = start - 300_000;
   let last = metrics.next(t);
+  // Each request's latency, for the heatmap: 1 s columns, 5 ms to 5 s in 48 log-spaced buckets.
+  const latencyHeat = new HeatmapStore({ step: 1000, min: 5, max: 5000, buckets: 48, maxColumns: 600 });
+  const heat = signal(false);
+  const observe = requestLatencies(20);
   const push = (time: number) => {
     const m = (last = metrics.next(time));
     traffic.append(time, [m.rate, m.errors]);
     latency.append(time, [m.p50, m.p95, m.p99]);
     cpu.append(time, m.cpu);
+    latencyHeat.add(time, observe(m, m.errors / m.rate));
   };
   for (; t < start; t += STEP) push(t);
   // Logs from the same 5 minutes, and the traces they link to.
@@ -459,19 +481,29 @@ function App() {
           />
         </Panel>
         <Panel>
-          <TimeSeriesChart
-            testID="latency"
-            title="Latency"
-            data={latency}
-            series={[{ label: "p50", width: 1.25 }, { label: "p95", width: 1.25 }, { label: "p99", width: 1.25 }]}
-            unit="ms"
-            softMin={0}
-            window={300_000}
-            thresholds={[{ value: SLO, label: `SLO ${SLO} ms`, color: "#e34948" }]}
-            annotations={annotations()}
-            sync={sync}
-            style={{ flex: 1 }}
-          />
+          <View class="flex-row items-center" style={{ gap: 6, marginBottom: 4 }}>
+            <Text class="text-sm font-medium text-foreground" style={{ flex: 1 }}>
+              Latency
+            </Text>
+            <Segment label="Percentiles" active={!heat()} onPress={() => heat.set(false)} testID="latency-lines" />
+            <Segment label="Heatmap" active={heat()} onPress={() => heat.set(true)} testID="latency-heat" />
+          </View>
+          {heat() ? (
+            <Heatmap testID="heatmap" data={latencyHeat} unit="ms" window={300_000} sync={sync} style={{ flex: 1 }} />
+          ) : (
+            <TimeSeriesChart
+              testID="latency"
+              data={latency}
+              series={[{ label: "p50", width: 1.25 }, { label: "p95", width: 1.25 }, { label: "p99", width: 1.25 }]}
+              unit="ms"
+              softMin={0}
+              window={300_000}
+              thresholds={[{ value: SLO, label: `SLO ${SLO} ms`, color: "#e34948" }]}
+              annotations={annotations()}
+              sync={sync}
+              style={{ flex: 1 }}
+            />
+          )}
         </Panel>
       </View>
       <View style={row()}>
