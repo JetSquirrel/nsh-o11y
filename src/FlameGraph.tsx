@@ -16,6 +16,7 @@ import {
   type GestureResponderEvent,
   type KeyEvent,
   type MouseEvent,
+  type ViewRef,
   type ViewStyle,
   type WheelEvent,
 } from "nsh";
@@ -54,7 +55,7 @@ export interface FlameGraphProps {
 }
 
 const PATH = (d: string) => new Path2D(d);
-const KEYS = ["escape", "0", "backspace"] as const;
+const KEYS = ["up", "down", "left", "right", "enter", "space", "escape", "0", "backspace"] as const;
 const DOUBLE_CLICK_MS = 350;
 
 export function FlameGraph(props: FlameGraphProps) {
@@ -62,9 +63,12 @@ export function FlameGraph(props: FlameGraphProps) {
   const plotFrame = signal(0);
   const overlayFrame = signal(0);
   const focus = signal<ProfileNode | null>(null);
+  const cursor = signal<ProfileNode | null>(null);
   const search = signal(props.highlight ?? "");
   let gesture: { origin: number; originY: number; x: number; y: number; lastY: number; moved: boolean } | null = null;
   let lastTap = 0;
+  // The plot canvas: a press gives it the keyboard, as Tab would.
+  let plotRef: ViewRef | undefined;
 
   const theme = computed<ChartTheme>(() => resolveTheme(props.colors, props.fontFamily, props.fontSize));
   const root = computed<ProfileNode>(() => {
@@ -83,6 +87,7 @@ export function FlameGraph(props: FlameGraphProps) {
     untracked(() => {
       e.setRoot(r);
       focus.set(r);
+      cursor.set(null);
       plotFrame.update((n) => n + 1);
     });
   });
@@ -98,11 +103,13 @@ export function FlameGraph(props: FlameGraphProps) {
   const zoomTo = (n: ProfileNode | null) => {
     e.zoomTo(n);
     focus.set(e.focus);
+    cursor.set(e.cursor);
     plotFrame.update((v) => v + 1);
     if (e.focus) props.onSelect?.(e.focus);
   };
 
   const onGrant = (ev: GestureResponderEvent) => {
+    plotRef?.focus();
     gesture = { origin: ev.pageX - ev.locationX, originY: ev.pageY - ev.locationY, x: ev.locationX, y: ev.locationY, lastY: ev.locationY, moved: false };
     return true;
   };
@@ -129,7 +136,9 @@ export function FlameGraph(props: FlameGraphProps) {
     }
     lastTap = now;
     const fr = e.frameAt(g.x, g.y);
-    if (fr) zoomTo(fr.node === e.focus && fr.node.parent ? fr.node.parent : fr.node);
+    if (!fr) return;
+    e.cursor = fr.node;
+    zoomTo(fr.node === e.focus && fr.node.parent ? fr.node.parent : fr.node);
   };
   const onWheel = (ev: WheelEvent) => {
     e.scrollBy(ev.deltaMode === "lines" ? ev.delta.y * 40 : ev.delta.y);
@@ -147,7 +156,26 @@ export function FlameGraph(props: FlameGraphProps) {
     overlayFrame.update((n) => n + 1);
   };
   const onKeyDown = (ev: KeyEvent) => {
-    if (ev.key === "Escape" || ev.key === "0") zoomTo(null);
+    // Arrows walk the frames (toward the root is up on screen in an icicle, down in a flame); Enter zooms.
+    const down = e.direction === "down";
+    const step: Record<string, "parent" | "child" | "prev" | "next"> = {
+      ArrowUp: down ? "parent" : "child",
+      ArrowDown: down ? "child" : "parent",
+      ArrowLeft: "prev",
+      ArrowRight: "next",
+    };
+    const dir = step[ev.key];
+    if (dir) {
+      if (e.moveCursor(dir)) {
+        focus.set(e.focus);
+        cursor.set(e.cursor);
+        if (e.cursor) e.revealDepth(e.cursor.depth);
+        plotFrame.update((n) => n + 1);
+      }
+      return;
+    }
+    if ((ev.key === "Enter" || ev.key === " ") && e.cursor) zoomTo(e.cursor);
+    else if (ev.key === "Escape" || ev.key === "0") zoomTo(null);
     else if (ev.key === "Backspace") zoomTo(e.focus?.parent ?? null);
   };
 
@@ -160,9 +188,11 @@ export function FlameGraph(props: FlameGraphProps) {
     const r = root();
     const f = focus() ?? r;
     const base = props.accessibilityLabel ?? "Flame graph";
-    return f === r
-      ? `${base}: ${formatValue(r.value, props.unit ?? "short")} in total`
-      : `${base}, zoomed to ${f.name}: ${formatValue(f.value, props.unit ?? "short")}, ${((f.value / (r.value || 1)) * 100).toFixed(1)}% of the total`;
+    const unit = props.unit ?? "short";
+    const pct = (v: number) => `${((v / (r.value || 1)) * 100).toFixed(1)}% of the total`;
+    const head = f === r ? `${base}: ${formatValue(r.value, unit)} in total` : `${base}, zoomed to ${f.name}: ${formatValue(f.value, unit)}, ${pct(f.value)}`;
+    const c = cursor();
+    return c ? `${head}. On ${c.name}: ${formatValue(c.value, unit)}, ${pct(c.value)}, self ${formatValue(c.self, unit)}` : head;
   };
 
   return (
@@ -227,8 +257,9 @@ export function FlameGraph(props: FlameGraphProps) {
           testID={props.testID ? `${props.testID}-plot` : undefined}
           role="image"
           accessibilityLabel={label()}
-          accessibilityHint="Press a frame to zoom to it, Escape zooms out, Backspace goes up a level"
+          accessibilityHint="Arrow keys move between frames, Enter zooms to one, Escape zooms out, Backspace goes up a level"
           focusable
+          ref={(r) => (plotRef = r)}
           captureKeys={KEYS}
           onKeyDown={onKeyDown}
           onStartShouldSetResponder={() => true}

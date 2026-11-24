@@ -25,6 +25,7 @@ import {
   type KeyEvent,
   type MouseEvent,
   type PinchEvent,
+  type ViewRef,
   type ViewStyle,
   type WheelEvent,
 } from "nsh";
@@ -106,6 +107,8 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
   let lastRange = "";
   let lastFollow = true;
   let lastTap = 0;
+  // The plot canvas: a press gives it the keyboard, as Tab would.
+  let plotRef: ViewRef | undefined;
   /** When the mouse last hovered: a drag without one is taken for a finger. */
   let lastHover = 0;
   let gesture: { mode: "pending" | "select" | "pan" | "pinch"; origin: number; start: number; last: number; distance: number } | null = null;
@@ -274,6 +277,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
   };
 
   const onGrant = (e: GestureResponderEvent) => {
+    plotRef?.focus();
     const origin = e.pageX - e.locationX;
     gesture = { mode: "pending", origin, start: e.locationX, last: e.locationX, distance: 0 };
     if (e.touches.length >= 2) startPinch(e);
@@ -476,6 +480,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
           accessibilityLabel={label()}
           accessibilityHint="Arrow keys move the cursor, plus and minus zoom, Backspace goes back, 0 resets"
           focusable
+          ref={(r) => (plotRef = r)}
           captureKeys={KEYS}
           onKeyDown={onKeyDown}
           onStartShouldSetResponder={() => true}

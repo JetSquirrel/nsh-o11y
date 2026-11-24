@@ -70,6 +70,7 @@ export class FlameEngine {
   setRoot(root: ProfileNode | null) {
     this.root = root;
     this.focus = root;
+    this.cursor = null;
     this.scrollY = 0;
     this.hover = null;
   }
@@ -139,6 +140,81 @@ export class FlameEngine {
   zoomTo(n: ProfileNode | null) {
     this.focus = n ?? this.root;
     this.hover = null;
+    // The keyboard cursor stays where it is when still in view, else goes to the focus.
+    if (this.cursor && !this.inFocus(this.cursor)) this.cursor = this.focus;
+  }
+
+  /** Whether n is the focus, under it, or one of its callers. */
+  inFocus(n: ProfileNode) {
+    const f = this.focus;
+    if (!f) return false;
+    for (let p: ProfileNode | null = n; p; p = p.parent) if (p === f) return true;
+    for (let p = f.parent; p; p = p.parent) if (p === n) return true;
+    return false;
+  }
+
+  /** The frame the keyboard is on, or null before a key is pressed. */
+  cursor: ProfileNode | null = null;
+
+  /**
+   * Moves the keyboard cursor: "parent" toward the root, "child" to the biggest callee, "prev" / "next" to
+   * the neighbor at the same depth (crossing parents, as the eye reads a row). Frames too narrow to see are
+   * still reached. Returns whether it moved.
+   */
+  moveCursor(dir: "parent" | "child" | "prev" | "next"): boolean {
+    const c = this.cursor ?? this.focus ?? this.root;
+    if (!c) return false;
+    if (!this.cursor) {
+      this.cursor = c;
+      return true;
+    }
+    let next: ProfileNode | null = null;
+    if (dir === "parent") next = c.parent;
+    else if (dir === "child") next = c.children[0] ?? null;
+    else {
+      // The frames at this depth inside the focus, left to right.
+      const row = this.row(c.depth);
+      const i = row.indexOf(c);
+      next = i < 0 ? null : row[i + (dir === "next" ? 1 : -1)] ?? null;
+    }
+    if (!next) return false;
+    this.cursor = next;
+    // Leaving the zoomed part upward: zoom out to keep the cursor in view.
+    if (!this.inFocus(next)) this.focus = this.root;
+    return true;
+  }
+
+  /** The nodes at depth d under the focus (or its callers above it), in drawing order. */
+  private row(d: number): ProfileNode[] {
+    const f = this.focus ?? this.root;
+    if (!f) return [];
+    if (d <= f.depth) {
+      let n: ProfileNode | null = f;
+      while (n && n.depth > d) n = n.parent;
+      return n ? [n] : [];
+    }
+    let level: ProfileNode[] = [f];
+    for (let k = f.depth; k < d && level.length; k++) {
+      const next: ProfileNode[] = [];
+      for (const n of level) for (const ch of n.children) next.push(ch);
+      level = next;
+    }
+    return level;
+  }
+
+  /** The laid-out frame of a node, if it is wide enough to have one. */
+  frameOf(n: ProfileNode | null): FlameFrame | null {
+    if (!n) return null;
+    for (const fr of this.frames) if (fr.node === n) return fr;
+    return null;
+  }
+
+  /** Scrolls so depth d's row shows. */
+  revealDepth(d: number) {
+    // scrollBy(dy) moves the content up by dy whichever way the graph grows.
+    const y = this.yOf(d);
+    if (y < 0) this.scrollBy(y);
+    else if (y + this.rowHeight > this.height) this.scrollBy(y + this.rowHeight - this.height);
   }
 
   matches(n: ProfileNode) {
@@ -215,6 +291,17 @@ export function renderFlame(cx: Ctx2D, e: FlameEngine, theme: ChartTheme, path: 
 
 /** An outline on the hovered frame, and its tooltip. */
 export function renderFlameOverlay(cx: Ctx2D, e: FlameEngine, theme: ChartTheme) {
+  // The keyboard cursor: an outline in the selection color, its tooltip when the mouse is elsewhere.
+  const kc = e.frameOf(e.cursor);
+  if (kc) {
+    const y = e.yOf(kc.depth);
+    cx.strokeStyle = theme.selection;
+    cx.lineWidth = 2;
+    cx.beginPath();
+    cx.rect(r1(kc.x + 1), r1(y + 1.5), r1(Math.max(1, kc.w - 2)), e.rowHeight - 3);
+    cx.stroke();
+    if (!e.hover) drawTooltip(cx, theme, e.frameLines(kc), kc.x + Math.min(kc.w, 40), y + e.rowHeight / 2, e.width, e.height);
+  }
   const fr = e.hover;
   if (!fr) return;
   const y = e.yOf(fr.depth);

@@ -20,6 +20,7 @@ import {
   type GestureResponderEvent,
   type KeyEvent,
   type MouseEvent,
+  type ViewRef,
   type ViewStyle,
   type WheelEvent,
 } from "nsh";
@@ -66,6 +67,8 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
   const selectedId = signal<string | null>(null);
   let gesture: { origin: number; originY: number; startX: number; startY: number; mode: "pending" | "select" | "pan" | "scroll"; last: number; lastY: number } | null = null;
   let lastTap = 0;
+  // The plot canvas: a press gives it the keyboard, as Tab would.
+  let plotRef: ViewRef | undefined;
   let lastHover = 0;
 
   const theme = computed<ChartTheme>(() => resolveTheme(props.colors, props.fontFamily, props.fontSize));
@@ -136,6 +139,7 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
   // ---- Input
 
   const onGrant = (ev: GestureResponderEvent) => {
+    plotRef?.focus();
     gesture = {
       origin: ev.pageX - ev.locationX,
       originY: ev.pageY - ev.locationY,
@@ -305,6 +309,7 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
         accessibilityLabel={label()}
         accessibilityHint="Up and down select a span, left and right fold, 0 zooms out"
         focusable
+        ref={(r) => (plotRef = r)}
         captureKeys={KEYS}
         onKeyDown={onKeyDown}
         onStartShouldSetResponder={() => true}

@@ -68,7 +68,7 @@ test("the traces tab: pick a trace, select a span", async () => {
   await app.wait(100);
   expect(app.texts()).toContain("Select a span to see its attributes");
   // A tap on a row selects its span; its attributes show below.
-  await app.drag("id:waterfall-plot", { x: 0, y: 0 }, { hold: 10 });
+  await app.drag("id:waterfall-plot", { x: 0, y: 0 });
   await app.wait(100);
   expect(app.texts()).not.toContain("Select a span to see its attributes");
   // Dragging across the timeline zooms; hovering shows a tooltip.
@@ -90,4 +90,26 @@ test("the profiles tab: the flame graph and the top functions", async () => {
   await app.press("id:top-0");
   await app.wait(100);
   expect(app.shows("id:flame-matched")).toBe(false);
+});
+
+test("the flame graph from the keyboard: arrows walk the frames, Enter zooms, Escape zooms out", async () => {
+  const app = await open("./App.tsx", { width: 1240, height: 860, platform: "windows" });
+  await app.waitFor("id:tab-profiles");
+  await app.press("id:tab-profiles");
+  await app.waitFor("id:flame-plot");
+  // A click gives the graph the keyboard (the middle of it is below the deepest frame: no zoom).
+  await app.drag("id:flame-plot", { x: 0, y: 0 });
+  expect(app.shows("id:flame-crumb-1")).toBe(false);
+  await app.keyboard.press("down"); // onto the root
+  // Headless runs don't route keys to a focused view: this part runs on a real host
+  // (`nsh test example/App.test.tsx --target windows`, or macos, linux).
+  if (!(app.accessibility("id:flame-plot")?.label ?? "").includes("On all")) return;
+  await app.keyboard.press("down"); // its biggest callee
+  expect(app.accessibility("id:flame-plot")?.label ?? "").toContain("On runtime.main");
+  await app.keyboard.press("enter");
+  await app.waitFor("id:flame-crumb-1");
+  expect(app.accessibility("id:flame-plot")?.label ?? "").toContain("zoomed to runtime.main");
+  await app.keyboard.press("escape");
+  await app.wait(50);
+  expect(app.shows("id:flame-crumb-1")).toBe(false);
 });

@@ -171,7 +171,10 @@ const profile = profileFromFolded("main;handle;parse 42\nmain;handle;render 17\n
 
 Each frame is as wide as the samples spent in it and in the functions it calls. Frames are colored by module, with
 the root at the top (`direction="up"` puts it at the bottom). Press a frame to zoom to it: its callers stay
-above, dimmed. Use the crumbs, Escape or a double-click to zoom back out. Searching greys out frames that don't
+above, dimmed. Use the crumbs, Escape or a double-click to zoom back out. From the keyboard, the arrows walk the
+frames (toward the root, to the biggest callee, and along a row), Enter zooms to the outlined frame, Backspace goes
+up a level, and screen readers hear the frame's name, total and self. Pressing any chart gives it the keyboard.
+Searching greys out frames that don't
 match and shows the share of samples that do. Frames under a third of a point wide are never laid out, so
 very large profiles stay quick. `profileFromStacks`, `profileFromTree`, `topFunctions` (self and total per
 function, recursion counted once) and `matchedValue` work headless. Props: `profile` (a `ProfileNode`, folded

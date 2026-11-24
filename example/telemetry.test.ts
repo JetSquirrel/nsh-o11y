@@ -292,6 +292,60 @@ describe("profiles", () => {
     expect(e.frameLines(hit)[1].text).toContain("%");
   });
 
+  test("the keyboard cursor walks parents, children and rows", () => {
+    const p = profileFromFolded("main;a;x 6\nmain;a;y 2\nmain;b;z 4\nidle 1\n");
+    const e = new FlameEngine();
+    e.setRoot(p);
+    e.setSize(800, 200);
+    e.layout();
+    expect(e.moveCursor("child")).toBe(true); // the first press lands on the focus
+    expect(e.cursor).toBe(p);
+    e.moveCursor("child");
+    expect(e.cursor!.name).toBe("main");
+    e.moveCursor("child");
+    expect(e.cursor!.name).toBe("a");
+    e.moveCursor("child");
+    expect(e.cursor!.name).toBe("x");
+    // Along the row, across parents: x, y (under a), z (under b).
+    e.moveCursor("next");
+    expect(e.cursor!.name).toBe("y");
+    e.moveCursor("next");
+    expect(e.cursor!.name).toBe("z");
+    expect(e.moveCursor("next")).toBe(false);
+    expect(e.moveCursor("child")).toBe(false);
+    // Zoomed to b, the row holds only b's callees; going up past the focus zooms out.
+    e.zoomTo(e.cursor!.parent);
+    expect(e.cursor!.name).toBe("z");
+    expect(e.moveCursor("prev")).toBe(false);
+    e.moveCursor("parent");
+    e.moveCursor("parent");
+    expect(e.cursor!.name).toBe("main");
+    // Callers of the focus are drawn (dimmed), so walking onto them keeps the zoom.
+    expect(e.focus!.name).toBe("b");
+    e.moveCursor("parent");
+    expect(e.cursor).toBe(p);
+    expect(e.focus!.name).toBe("b");
+    // Down from a caller to a callee outside the zoomed part (a, not b): zoom out to keep it in view.
+    e.moveCursor("child");
+    expect(e.cursor!.name).toBe("main");
+    e.moveCursor("child");
+    expect(e.cursor!.name).toBe("a");
+    expect(e.focus).toBe(p);
+    // Zooming to somewhere the cursor isn't brings the cursor along.
+    e.zoomTo(p.children[0].children[0]);
+    expect(e.cursor!.name).toBe("a"); // the focus itself: still in view
+    e.cursor = p.children.find((c) => c.name === "idle")!;
+    e.zoomTo(p.children[0]);
+    expect(e.cursor).toBe(p.children[0]);
+    // The cursor draws, and a deep row scrolls into view.
+    e.layout();
+    e.setSize(800, 40);
+    e.revealDepth(3);
+    expect(e.yOf(3)).toBeGreaterThanOrEqual(0);
+    expect(e.yOf(3) + e.rowHeight).toBeLessThanOrEqual(40);
+    renderFlameOverlay(ctx(800, 40), e, THEME);
+  });
+
   test("text is cut to fit", () => {
     const cx = ctx(100, 100);
     cx.font = "11px system-ui";
