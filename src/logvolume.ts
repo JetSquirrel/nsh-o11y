@@ -27,6 +27,8 @@ export class LogVolumeEngine {
   /** The bucket under the pointer, or -1. */
   hover = -1;
   hoverY = 0;
+  /** Where the pointer is across the plot, so the hovered bucket can be found again after an update. */
+  hoverX = 0;
   /** A drag in progress, in points. */
   selection: { from: number; to: number } | null = null;
   /** The range the list is narrowed to, drawn shaded. */
@@ -59,6 +61,8 @@ export class LogVolumeEngine {
     this.yTicks = valueTicks(0, top, this.plot.height, 22).filter((v) => v === Math.round(v));
     this.yMax = Math.max(top, this.yTicks.length ? this.yTicks[this.yTicks.length - 1] : top);
     this.xTicks = timeTicks(x0, x1, this.plot.width, 90, this.timeZone).ticks;
+    // The buckets were just made again (lines streamed in, the window slid): what is under a still pointer?
+    if (this.hover >= 0) this.hover = this.inPlot(this.hoverX, this.plot.top + 1) ? this.bucketAt(this.hoverX) : -1;
   }
 
   toPx(t: number) {
@@ -99,7 +103,7 @@ export class LogVolumeEngine {
   /** What the tooltip says for bucket k: its time and total, then each level's count (two lines: the panel is short). */
   bucketLines(k: number): TooltipLine[] {
     const h = this.hist;
-    if (!h || k < 0) return [];
+    if (!h || k < 0 || k >= h.buckets) return [];
     const t = h.t0 + k * h.step;
     let total = 0;
     const parts: string[] = [];

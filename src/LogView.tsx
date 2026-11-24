@@ -174,6 +174,7 @@ export function LogView(props: LogViewProps) {
     if (g.moved) {
       vol.selection = { from: g.start, to: x };
       vol.hover = vol.bucketAt(x);
+      vol.hoverX = x;
       overlay.update((n) => n + 1);
     }
   };
@@ -208,6 +209,7 @@ export function LogView(props: LogViewProps) {
     if (gesture) return;
     const k = vol.inPlot(e.position.x, e.position.y) ? vol.bucketAt(e.position.x) : -1;
     vol.hoverY = e.position.y;
+    vol.hoverX = e.position.x;
     if (k !== vol.hover || k >= 0) {
       vol.hover = k;
       overlay.update((n) => n + 1);

@@ -85,14 +85,22 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
   const redraw = () => plotFrame.update((n) => n + 1);
   const redrawOverlay = () => overlayFrame.update((n) => n + 1);
 
+  // A new trace: zoomed out, at the top, the selection revealed once laid out.
   effect(() => {
     const m = model();
-    const palette = theme().palette;
     untracked(() => {
       e.zoomed = false;
-      e.setModel(m, palette);
+      e.setModel(m, theme().palette);
       e.scrollY = 0;
       revealPending = true;
+      redraw();
+    });
+  });
+  // A new palette (light and dark, or `colors`): only the services' colors change, the view stays.
+  effect(() => {
+    const palette = theme().palette;
+    untracked(() => {
+      e.setPalette(palette);
       redraw();
     });
   });

@@ -157,6 +157,8 @@ export class FlameEngine {
 
   /** Zooms to a frame (the root: all the way out). */
   zoomTo(n: ProfileNode | null) {
+    // A frame with no width (in a diff, a stack gone since the baseline) would leave nothing to draw.
+    if (n && n.value <= 0) return;
     this.focus = n ?? this.root;
     this.hover = null;
     // The keyboard cursor stays where it is when still in view, else goes to the focus.
@@ -189,7 +191,7 @@ export class FlameEngine {
     }
     let next: ProfileNode | null = null;
     if (dir === "parent") next = c.parent;
-    else if (dir === "child") next = c.children[0] ?? null;
+    else if (dir === "child") next = c.children[0] && c.children[0].value > 0 ? c.children[0] : null; // biggest first
     else {
       // The frames at this depth inside the focus, left to right.
       const row = this.row(c.depth);
@@ -215,7 +217,8 @@ export class FlameEngine {
     let level: ProfileNode[] = [f];
     for (let k = f.depth; k < d && level.length; k++) {
       const next: ProfileNode[] = [];
-      for (const n of level) for (const ch of n.children) next.push(ch);
+      // In a diff, stacks only in the baseline have no width now: not drawn, so not stopped on.
+      for (const n of level) for (const ch of n.children) if (ch.value > 0) next.push(ch);
       level = next;
     }
     return level;

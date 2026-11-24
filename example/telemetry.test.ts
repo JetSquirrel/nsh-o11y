@@ -700,3 +700,96 @@ describe("profiles", () => {
     expect(fitText(cx, "11px system-ui", "anything", 3)).toBe("");
   });
 });
+
+describe("review fixes", () => {
+  test("a heatmap's hover follows its columns when they are made again", () => {
+    const s = new HeatmapStore({ step: 1000, min: 5, max: 5000, buckets: 24, maxColumns: 20 });
+    for (let t = 0; t < 22_000; t += 1000) s.add(t, [50, 60]);
+    const e = new HeatmapEngine();
+    e.store = s;
+    e.setSize(600, 200);
+    e.update(0, 22_000);
+    // The pointer rests on the last column; the store then drops its oldest ones.
+    e.pointer = { x: e.toPx(21_500), y: e.toPy(55) };
+    e.hover = e.cellAt(e.pointer.x, e.pointer.y);
+    expect(e.hover!.col).toBe(e.cols.length - 1);
+    for (let t = 22_000; t < 30_000; t += 1000) s.add(t, [50]);
+    e.update(10_000, 30_000);
+    expect(e.hover === null || e.hover.col < e.cols.length).toBe(true);
+    renderHeatmapOverlay(ctx(600, 200), e, THEME); // used to throw on a missing column
+  });
+
+  test("a heatmap store refuses a range it cannot bucket", () => {
+    expect(() => new HeatmapStore({ min: 0, max: 5000 })).toThrow("log scale needs min > 0");
+    expect(() => new HeatmapStore({ scale: "linear", min: 10, max: 10 })).toThrow("must be greater than min");
+    expect(new HeatmapStore({ scale: "linear", min: 0, max: 100 }).bucketOf(50)).toBe(20);
+  });
+
+  test("custom ramps take #rgb, and colors that can't be blended step", () => {
+    for (const c of heatRamp(false, ["#fff", "#39f", "#003"])) expect(/^#[0-9a-f]{6}$/.test(c)).toBe(true);
+    const named = heatRamp(false, ["white", "steelblue", "navy"]);
+    expect(named[0]).toBe("white");
+    expect(named[named.length - 1]).toBe("navy");
+  });
+
+  test("the log histogram's hover follows its buckets as lines stream in", () => {
+    const s = LogStore.from(randomLogs(500, 3));
+    const e = new LogVolumeEngine();
+    e.setSize(600, 100);
+    const [t0, t1] = s.extent()!;
+    e.update(s, {}, t0, t1);
+    e.hoverX = e.plot.left + e.plot.width - 1;
+    e.hover = e.bucketAt(e.hoverX);
+    // The window slides to far past: the old index means nothing now.
+    e.update(s, {}, t1 + 3_600_000, t1 + 7_200_000);
+    expect(e.hover < (e.hist?.buckets ?? 0)).toBe(true);
+    for (const l of e.bucketLines(e.hover)) expect(l.text.includes("NaN")).toBe(false);
+    expect(e.bucketLines(1e9)).toEqual([]);
+  });
+
+  test("recoloring the waterfall keeps its zoom and scroll", () => {
+    const { spans } = checkoutTrace(5, 0);
+    const m = new TraceModel(spans);
+    const e = new WaterfallEngine();
+    e.setSize(900, 200);
+    e.setModel(m, PALETTE_LIGHT);
+    e.setRows(m.rows());
+    e.setView(10, 40);
+    e.scrollBy(100);
+    const before = [e.v0, e.v1, e.scrollY, e.zoomed];
+    e.setPalette(["#000000", "#111111"]);
+    expect([e.v0, e.v1, e.scrollY, e.zoomed]).toEqual(before);
+    expect(e.colorOf(e.rows[0])).toBe("#000000");
+  });
+
+  test("in a diff, frames gone since the baseline are not stopped on or zoomed to", () => {
+    const d = diffProfiles(profileFromFolded("main;a 5\nmain;gone 5\n"), profileFromFolded("main;a 10\n"));
+    const e = new FlameEngine();
+    e.setRoot(d);
+    e.setSize(400, 100);
+    e.layout();
+    const main = d.children[0];
+    const gone = main.children.find((c) => c.name === "gone")!;
+    e.zoomTo(gone);
+    expect(e.focus).toBe(d); // ignored
+    e.cursor = main.children.find((c) => c.name === "a")!;
+    expect(e.moveCursor("next")).toBe(false); // "gone" has no width
+  });
+
+  test("spans whose parents loop are shown, as roots, and nothing walks forever", () => {
+    const spans: Span[] = [
+      { spanId: "r", name: "root", service: "s", start: 0, duration: 100 },
+      { spanId: "a", parentId: "b", name: "a", service: "s", start: 10, duration: 20 },
+      { spanId: "b", parentId: "a", name: "b", service: "s", start: 15, duration: 5 },
+      { spanId: "c", parentId: "a", name: "c", service: "s", start: 12, duration: 3 },
+      { spanId: "self", parentId: "self", name: "self", service: "s", start: 50, duration: 1 },
+    ];
+    const m = new TraceModel(spans);
+    expect(m.rows().map((r) => r.span.spanId).sort()).toEqual(["a", "b", "c", "r", "self"]);
+    expect(m.cycles).toEqual(["a"]); // the earliest of the loop
+    expect(m.parent(m.span("a")!)).toBeUndefined();
+    expect(m.depth(m.span("b")!)).toBe(1);
+    expect(m.depth(m.span("self")!)).toBe(0);
+    expect(m.criticalPath().has("r")).toBe(true);
+  });
+});

@@ -44,6 +44,9 @@ export class TraceModel {
   /** Services in the order their first span starts: the order colors are given in. */
   readonly services: string[];
   readonly roots: Span[];
+  /** Spans made roots to break a loop of parents, by id: the data was bad there. */
+  readonly cycles: string[] = [];
+  private readonly cycleRoots = new Set<string>();
   private readonly kids = new Map<string, Span[]>();
   private readonly byId = new Map<string, Span>();
   private readonly selfTimes = new Map<string, number>();
@@ -59,6 +62,30 @@ export class TraceModel {
         let list = this.kids.get(p.spanId);
         if (!list) this.kids.set(p.spanId, (list = []));
         list.push(s);
+      }
+    }
+    // Spans whose parents loop (A's parent is B, B's is A: bad data, or clocks merged badly) are reached from
+    // no root. Each cycle is broken at its earliest span, which becomes a root: shown, and never walked forever.
+    const reached = new Set<string>();
+    const mark = (from: Span) => {
+      const stack = [from];
+      while (stack.length) {
+        const s = stack.pop()!;
+        if (reached.has(s.spanId)) continue;
+        reached.add(s.spanId);
+        for (const c of this.kids.get(s.spanId) ?? []) stack.push(c);
+      }
+    };
+    for (const r of roots) mark(r);
+    if (reached.size < spans.length) {
+      for (const s of spans.slice().sort((a, b) => a.start - b.start)) {
+        if (reached.has(s.spanId) || this.byId.get(s.spanId) !== s) continue;
+        const siblings = this.kids.get(s.parentId!);
+        if (siblings) siblings.splice(siblings.indexOf(s), 1);
+        this.cycles.push(s.spanId);
+        this.cycleRoots.add(s.spanId);
+        roots.push(s);
+        mark(s);
       }
     }
     const byStart = (a: Span, b: Span) => a.start - b.start || b.duration - a.duration;
@@ -95,7 +122,9 @@ export class TraceModel {
   }
 
   parent(s: Span) {
-    return s.parentId !== undefined ? this.byId.get(s.parentId) : undefined;
+    // A span made a root to break a loop has no parent: walking up from anywhere ends.
+    if (s.parentId === undefined || s.parentId === s.spanId || this.cycleRoots.has(s.spanId)) return undefined;
+    return this.byId.get(s.parentId);
   }
 
   /** How deep the span is: 0 for a root. */

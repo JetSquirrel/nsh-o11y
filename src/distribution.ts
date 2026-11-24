@@ -74,6 +74,9 @@ export class HeatmapStore {
     this.max = o.max ?? 10_000;
     this.buckets = Math.max(1, Math.round(o.buckets ?? 40));
     this.maxColumns = o.maxColumns ?? Infinity;
+    // A range that cannot be bucketed would make every value NaN (and the axis ticks loop): say so now.
+    if (!(this.max > this.min) || !isFinite(this.max) || !isFinite(this.min)) throw new RangeError(`HeatmapStore: max (${this.max}) must be greater than min (${this.min})`);
+    if (this.scale === "log" && !(this.min > 0)) throw new RangeError(`HeatmapStore: a log scale needs min > 0 (got ${this.min}); use scale: "linear" for a range from 0`);
     this.edges = new Float64Array(this.buckets + 1);
     for (let i = 0; i <= this.buckets; i++) this.edges[i] = this.valueAt(i / this.buckets);
   }
@@ -232,6 +235,13 @@ function hex(n: number) {
   return Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, "0");
 }
 
+/** `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa` as `#rrggbb`; null for anything else (named, rgb()). */
+function hex6(c: string): string | null {
+  const h = c.trim();
+  if (!/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(h)) return null;
+  return h.length <= 5 ? `#${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}` : h.slice(0, 7);
+}
+
 function mix(a: string, b: string, t: number) {
   const p = (s: string, i: number) => parseInt(s.slice(1 + i * 2, 3 + i * 2), 16);
   return `#${hex(p(a, 0) + (p(b, 0) - p(a, 0)) * t)}${hex(p(a, 1) + (p(b, 1) - p(a, 1)) * t)}${hex(p(a, 2) + (p(b, 2) - p(a, 2)) * t)}`;
@@ -239,9 +249,12 @@ function mix(a: string, b: string, t: number) {
 
 /** A sequential ramp, faint to strong, through three stops: on light surfaces dark is more, on dark light is. */
 export function heatRamp(dark: boolean, stops?: [string, string, string]): string[] {
-  const [a, b, c] = stops ?? (dark ? ["#16263d", "#2a78d6", "#bfe0ff"] : ["#e6f0fb", "#3987e5", "#0d2a57"]);
+  const given = stops ?? (dark ? ["#16263d", "#2a78d6", "#bfe0ff"] : ["#e6f0fb", "#3987e5", "#0d2a57"]);
+  const [a, b, c] = given.map(hex6);
   return Array.from({ length: RAMP_STEPS }, (_, i) => {
     const t = i / (RAMP_STEPS - 1);
+    // Colors that are not hex can't be blended: step from one stop to the next instead.
+    if (!a || !b || !c) return given[t < 1 / 3 ? 0 : t < 2 / 3 ? 1 : 2];
     return t < 0.5 ? mix(a, b, t * 2) : mix(b, c, (t - 0.5) * 2);
   });
 }
@@ -375,6 +388,12 @@ export class HeatmapEngine {
       this.colorTable = table;
     }
     this.shown = this.thin(s);
+    // What is under a still pointer: the columns were just made again (new data, a zoom, a resize), so an
+    // index into the old ones may point at another column, or past the end.
+    if (this.hover || this.hoverExemplar) {
+      this.hoverExemplar = this.hoverExemplar ? this.exemplarAt(this.pointer.x, this.pointer.y) : null;
+      this.hover = this.hoverExemplar ? null : this.cellAt(this.pointer.x, this.pointer.y);
+    }
   }
 
   /** What is drawn: the store's columns, or, where they are under 2 points wide, groups of them summed. */
@@ -425,11 +444,14 @@ export class HeatmapEngine {
       const p = Math.pow(10, Math.floor(Math.log10(raw)));
       const step = [1, 2, 5, 10].map((m) => m * p).find((v) => v >= raw) ?? raw;
       const out: number[] = [];
-      for (let v = Math.ceil(s.min / step) * step; v <= s.max + 1e-9; v += step) out.push(v);
+      if (!(step > 0) || !isFinite(step)) return [s.min, s.max];
+      for (let v = Math.ceil(s.min / step) * step; v <= s.max + 1e-9 && out.length < 100; v += step) out.push(v);
       return out;
     }
     const all: number[] = [];
-    for (let e = Math.floor(Math.log10(s.min)); e <= Math.ceil(Math.log10(s.max)); e++) for (const m of [1, 2, 5]) {
+    const e0 = Math.floor(Math.log10(s.min));
+    const e1 = Math.min(e0 + 30, Math.ceil(Math.log10(s.max)));
+    for (let e = e0; e <= e1; e++) for (const m of [1, 2, 5]) {
       const v = m * Math.pow(10, e);
       if (v >= s.min * 0.999 && v <= s.max * 1.001) all.push(v);
     }
@@ -634,8 +656,8 @@ export function renderHeatmapOverlay(cx: Ctx2D, e: HeatmapEngine, theme: ChartTh
     return;
   }
   const h = e.hover;
-  if (h) {
-    const c = e.cols[h.col];
+  const c = h ? e.cols[h.col] : undefined;
+  if (h && c) {
     const x = e.toPx(c.time);
     const cw = Math.max(2, (c.span / (e.x1 - e.x0)) * plot.width);
     const ch = plot.height / s.buckets;

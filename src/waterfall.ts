@@ -69,6 +69,14 @@ export class WaterfallEngine {
     if (!this.zoomed) this.reset();
   }
 
+  /** Colors the services again, keeping the zoom, the scroll and the selection. */
+  setPalette(palette: readonly string[]) {
+    const m = this.model;
+    this.services.clear();
+    if (m) m.services.forEach((s, i) => this.services.set(s, palette[i % palette.length]));
+    this.miniCache = null;
+  }
+
   setRows(rows: WaterfallRow[]) {
     this.rows = rows;
     if (this.selected >= rows.length) this.selected = rows.length - 1;
