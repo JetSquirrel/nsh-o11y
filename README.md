@@ -1,9 +1,11 @@
 # nsh-o11y
 
 Observability charts for [Native Shell (NSH)](https://nsh.dev), written in TSX, with an optional Rust backend
-for large data. It starts with one component, `TimeSeriesChart`, built to beat [uPlot](https://github.com/leeoniya/uPlot), ECharts and Chart.js
-where native O11y dashboards need it: millions of points, zooming, live data, many panels. It draws on NSH's
-native `<Canvas>`, so it runs on every NSH platform, and ships as an nshm, laid out like
+for large data. Its core is `TimeSeriesChart`, built to beat [uPlot](https://github.com/leeoniya/uPlot), ECharts and Chart.js
+where native O11y dashboards need it: millions of points, zooming, live data, many panels. Around it are the
+other three signals: `LogView` (a log-volume histogram over a virtualized, filterable log list),
+`TraceWaterfall` (one trace's spans as a tree of bars) and `FlameGraph` (a CPU or allocation profile). Everything
+draws on NSH's native `<Canvas>`, so it runs on every NSH platform, and ships as an nshm, laid out like
 [nsh-graph](../nsh-graph).
 
 **[Site and live demo](https://jetsquirrel.github.io/nsh-o11y/)**: the example dashboard, built with `nsh package --target web`
@@ -111,6 +113,71 @@ chart.setRange(t0, t1);  chart.zoom(2);  chart.back();  chart.reset();  chart.to
 const png = await chart.toImage({ scale: 2 });          // Blob
 ```
 
+## Logs, traces and profiles
+
+The example's **Logs**, **Traces** and **Profiles** tabs show all three components with the metrics: a log line's
+trace id opens its trace.
+
+### `LogView`
+
+```tsx
+import { LogStore, LogView } from "nsh-o11y";
+
+const logs = new LogStore({ maxEntries: 50_000 });
+logs.append({ time: Date.now(), level: "error", message: "charge failed", service: "payment", traceId });
+
+<LogView data={logs} window={5 * 60_000} onTraceClick={(id) => openTrace(id)} style={{ flex: 1 }} />
+```
+
+The view has level toggles with counts, a search box (message, service and attributes, case-insensitive), a
+stacked histogram of volume per level, and the lines newest first in a virtualized `List`. Drag across the histogram
+or tap a bar to narrow the list to that time; double-tap to show everything again. Press a line to see its
+attributes and its trace link. Lines may arrive a little out of order, and the oldest are dropped past `maxEntries`.
+Props: `data` (a `LogStore` or `LogEntry[]`), `levels`, `search`, `toolbar`, `histogram`, `histogramHeight`,
+`order` (`"newest"` / `"oldest"`), `window`, `timeZone`, `levelColors`, `onSelect`, `onTraceClick`,
+`onRangeChange`.
+
+`LogStore` works without NSH: `query(filter)`, `levelCounts(filter)` and `histogram(t0, t1, step, filter)` take a
+filter of `{ levels, text, from, to }`.
+
+### `TraceWaterfall`
+
+```tsx
+import { TraceWaterfall, type Span } from "nsh-o11y";
+
+const spans: Span[] = [
+  { spanId: "a", name: "POST /checkout", service: "frontend", start: 0, duration: 84 },
+  { spanId: "b", parentId: "a", name: "PaymentService.Charge", service: "payment", start: 31, duration: 41, status: "error" },
+];
+<TraceWaterfall spans={spans} onSelect={(span) => showDetails(span)} style={{ flex: 1 }} />
+```
+
+Each span gets a row: its name indented under its parent, and a bar colored by service. Error spans are
+outlined in red and the critical path is underlined. Press a row to select it, or its triangle to fold its
+children. Drag across the timeline to zoom, Ctrl/⌘ + scroll to zoom, scroll through the rows, Shift + scroll to
+pan, double-click to zoom out. ↑/↓ select, ←/→ fold, 0 zooms out. Only the rows in view are drawn: in the test,
+a trace of 10,000 spans draws under 100 labels. Props: `spans` (a `Span[]` or a `TraceModel`), `rowHeight`,
+`labelWidth`, `criticalPath`, `collapsed`, `selected`, `onSelect`. `TraceModel` gives the rows, each span's
+self time and the critical path, headless.
+
+### `FlameGraph`
+
+```tsx
+import { FlameGraph, profileFromFolded } from "nsh-o11y";
+
+const profile = profileFromFolded("main;handle;parse 42\nmain;handle;render 17\n");   // flamegraph.pl's format
+<FlameGraph profile={profile} unit="short" style={{ flex: 1 }} />
+```
+
+Each frame is as wide as the samples spent in it and in the functions it calls. Frames are colored by module, with
+the root at the top (`direction="up"` puts it at the bottom). Press a frame to zoom to it: its callers stay
+above, dimmed. Use the crumbs, Escape or a double-click to zoom back out. Searching greys out frames that don't
+match and shows the share of samples that do. Frames under a third of a point wide are never laid out, so
+very large profiles stay quick. `profileFromStacks`, `profileFromTree`, `topFunctions` (self and total per
+function, recursion counted once) and `matchedValue` work headless. Props: `profile` (a `ProfileNode`, folded
+text, or `{ name, value?, children? }`), `unit`, `direction`, `rowHeight`, `colorBy` (`"module"` / `"name"`),
+`toolbar`, `highlight`, `onSelect`.
+
 ## Rust backend
 
 ```ts
@@ -139,10 +206,21 @@ src/
   sync.ts             shared cursor and zoom across charts
   controller.ts       imperative handle, image export
   palette.ts          series colors
+  theme.ts            the theme from NSH's tokens, shared by every component
+  draw.ts             canvas helpers: text cut to fit, tooltips, rectangles batched by color
+  logs.ts             LogStore: lines in time order, filters, level counts, the volume histogram
+  logvolume.ts        the histogram's engine and renderer
+  LogView.tsx         the log explorer component
+  traces.ts           TraceModel: spans as a tree, waterfall rows, self time, the critical path
+  waterfall.ts        the waterfall's engine and renderer
+  TraceWaterfall.tsx  the waterfall component
+  profile.ts          call trees from folded stacks, stacks or trees; top functions; search
+  flame.ts            the flame graph's engine and renderer
+  FlameGraph.tsx      the flame graph component
 native/src/
   lib.rs              the native module: SeriesBuffer
   lod.rs              the pyramid and the tracer in Rust
-example/              a service dashboard (live panels + a big one), tests
+example/              a service dashboard (metrics, logs, traces, a profile), tests
 perf/                 the same dashboard with the Rust backend; TypeScript vs Rust benchmark
 bench/web/            uPlot, ECharts, Chart.js, Plotly, Dygraphs and nsh-o11y in a headless browser
 ```
@@ -242,7 +320,10 @@ cd bench/web && bun install && bun run.ts     # every library on the same scenar
 ## Roadmap
 
 - More O11y panels on the same engine: histograms / heatmaps (latency distributions), bar and stacked area,
-  a trace waterfall, a log-volume timeline with exemplars linking to traces.
+  exemplars on time series linking to traces.
+- Traces: a span-duration minimap, span events as marks on the bars, and comparing two traces.
+- Profiles: diff flame graphs (before / after), and a sandwich view (a function's callers and callees).
+- Logs in the Rust backend, for tens of millions of lines.
 - A second y axis.
 - Keep the newest frame's paths in Rust and hand the canvas a native path handle instead of SVG text.
 

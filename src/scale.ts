@@ -127,6 +127,13 @@ export function timeTicks(t0: number, t1: number, width: number, minGap = 80, tz
   return { step, ticks };
 }
 
+/** The smallest calendar-friendly time step (1 s, 5 s, 1 min, 5 min, 1 h…) at least `raw` ms: bucket widths. */
+export function timeStep(raw: number): number {
+  if (!(raw > 0)) return TIME_STEPS[0];
+  for (const s of TIME_STEPS) if (s >= raw) return s;
+  return Math.ceil(raw / DAY) * DAY;
+}
+
 /** A 1-2-5 step near `raw`. */
 export function niceStep(raw: number): number {
   if (!(raw > 0) || !isFinite(raw)) return 1;

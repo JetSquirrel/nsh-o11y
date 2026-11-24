@@ -1,14 +1,31 @@
-import { mount, signal, Text, View, windowSize, type JSX } from "nsh";
+import { List, computed, mount, signal, Text, View, windowSize, type JSX } from "nsh";
 import {
+  FlameGraph,
+  LogStore,
+  LogView,
   TimeSeriesChart,
+  TraceModel,
+  TraceWaterfall,
   createChartController,
   createChartSync,
   createTimeSeries,
   formatValue,
   nativeBackend,
+  profileFromFolded,
+  topFunctions,
   type Annotation,
+  type Span,
 } from "nsh-o11y";
 import { randomWalkChunks, serviceMetrics } from "./data";
+import { checkoutProfile, serviceLogs } from "./telemetry";
+
+type Tab = "metrics" | "logs" | "traces" | "profiles";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "metrics", label: "Metrics" },
+  { id: "logs", label: "Logs" },
+  { id: "traces", label: "Traces" },
+  { id: "profiles", label: "Profiles" },
+];
 
 function Button(props: { label: string; onPress: () => void; active?: boolean; testID?: string }) {
   return (
@@ -86,6 +103,11 @@ function App() {
     cpu.append(time, m.cpu);
   };
   for (; t < start; t += STEP) push(t);
+  // Logs from the same 5 minutes, and the traces they link to.
+  const logSource = serviceLogs(11, [incident]);
+  const logs = new LogStore({ maxEntries: 50_000 });
+  logs.append(logSource.next(start - 300_000, start));
+  let logT = start;
   annotations.set([
     { time: start - 200_000, label: "deploy v2.14", color: "#6250d6" },
     { time: incident[0], end: incident[1], label: "incident #812", color: "#e34948" },
@@ -98,9 +120,37 @@ function App() {
     if (!live()) return;
     const at = Date.now();
     for (; t < at; t += STEP) push(t);
-    if (++ticks % 5 === 0) now.set(last);
+    if (++ticks % 5 === 0) {
+      now.set(last);
+      const lines = logSource.next(logT, at);
+      logT = at;
+      if (lines.length) logs.append(lines);
+    }
   }, STEP);
   void timer;
+
+  // ---- Traces: the newest ones the logs link to, one open in the waterfall.
+  const tab = signal<Tab>("metrics");
+  const traceList = signal(logSource.recent(40));
+  const firstError = traceList().find((tr) => tr.spans.some((s) => s.status === "error")) ?? traceList()[0];
+  const traceId = signal<string | null>(firstError?.traceId ?? null);
+  const span = signal<Span | null>(null);
+  const openTrace = (id: string) => {
+    traceList.set(logSource.recent(40));
+    traceId.set(id);
+    span.set(null);
+    tab.set("traces");
+  };
+  const trace = computed(() => {
+    const id = traceId();
+    const spans = id ? logSource.trace(id) : undefined;
+    return spans ? new TraceModel(spans) : null;
+  });
+
+  // ---- A CPU profile.
+  const profile = profileFromFolded(checkoutProfile());
+  const top = topFunctions(profile, 14);
+  const highlight = signal("");
 
   // ---- A big one: the random walk, at a size picked below.
   const size = signal<number>(1_000_000);
@@ -130,6 +180,143 @@ function App() {
   const errorRate = () => now().errors / now().rate;
   const cpuMean = () => now().cpu.reduce((a, b) => a + b, 0) / now().cpu.length;
 
+  const logsPage = () => (
+    <Panel>
+      <LogView
+        testID="logs"
+        title="Logs"
+        data={logs}
+        window={300_000}
+        onTraceClick={(id) => openTrace(id)}
+        style={{ flex: 1 }}
+      />
+    </Panel>
+  );
+
+  const tracesPage = () => (
+    <View style={{ flex: 1, flexDirection: "row", gap: 14 }}>
+      <View class="rounded-xl border border-border bg-card py-2" style={{ width: 300 }}>
+        <Text class="text-sm font-medium text-foreground" style={{ paddingHorizontal: 12, paddingBottom: 6 }}>
+          Recent traces
+        </Text>
+        <List each={traceList()} keyExtractor={(tr) => tr.traceId} style={{ flex: 1 }} testID="trace-list">
+          {(tr, i) => {
+            const root = () => tr().spans.find((s) => !s.parentId) ?? tr().spans[0];
+            const bad = () => tr().spans.some((s) => s.status === "error");
+            return (
+              <View
+                role="button"
+                testID={`trace-${i()}`}
+                accessibilityState={{ selected: traceId() === tr().traceId }}
+                onPress={() => {
+                  traceId.set(tr().traceId);
+                  span.set(null);
+                }}
+                class={`px-3 py-1.5 ${traceId() === tr().traceId ? "bg-accent" : "hover:bg-accent"}`}
+                style={{ gap: 1 }}
+              >
+                <View class="flex-row items-center" style={{ gap: 6 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: bad() ? "#e34948" : "#1baf7a" }} />
+                  <Text class="text-xs text-foreground" style={{ flex: 1, numberOfLines: 1 }}>
+                    {root().name}
+                  </Text>
+                  <Text class="text-xs text-muted-foreground" style={{ fontVariant: ["tabular-nums"] }}>
+                    {formatValue(root().duration, "ms")}
+                  </Text>
+                </View>
+                <Text class="font-mono text-xs text-muted-foreground" style={{ numberOfLines: 1 }}>
+                  {`${tr().traceId.slice(0, 16)} · ${tr().spans.length} spans`}
+                </Text>
+              </View>
+            );
+          }}
+        </List>
+      </View>
+      <View style={{ flex: 1, gap: 14 }}>
+        <Panel>
+          <Text class="text-sm font-medium text-foreground" style={{ marginBottom: 6 }}>
+            {traceId() ? `Trace ${traceId()!.slice(0, 16)}…` : "Trace"}
+          </Text>
+          {trace() ? (
+            <TraceWaterfall testID="waterfall" spans={trace()!} onSelect={(s) => span.set(s)} style={{ flex: 1 }} />
+          ) : (
+            <Text class="text-sm text-muted-foreground">No trace selected</Text>
+          )}
+        </Panel>
+        <View class="rounded-xl border border-border bg-card px-4 py-3" style={{ height: 170, gap: 3 }} testID="span-details">
+          {span() ? (
+            <View style={{ gap: 3 }}>
+              <Text class="text-sm font-medium text-foreground">{`${span()!.name} · ${span()!.service}`}</Text>
+              <Text class="text-xs text-muted-foreground">
+                {`${formatValue(span()!.duration, "ms")} · ${span()!.kind ?? "internal"} · ${span()!.status ?? "unset"} · span ${span()!.spanId}`}
+              </Text>
+              <Each of={Object.entries(span()!.attributes ?? {})}>
+                {(kv) => (
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <Text class="font-mono text-xs text-muted-foreground" style={{ width: 160 }}>
+                      {kv()[0]}
+                    </Text>
+                    <Text class="font-mono text-xs text-foreground" style={{ flex: 1 }}>
+                      {String(kv()[1])}
+                    </Text>
+                  </View>
+                )}
+              </Each>
+            </View>
+          ) : (
+            <Text class="text-sm text-muted-foreground">Select a span to see its attributes</Text>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+
+  const profilesPage = () => (
+    <View style={{ flex: 1, flexDirection: wide() ? "row" : "column", gap: 14 }}>
+      <Panel>
+        <Text class="text-sm font-medium text-foreground" style={{ marginBottom: 6 }}>
+          {`CPU profile · ${profile.value.toLocaleString()} samples`}
+        </Text>
+        <FlameGraph testID="flame" profile={profile} highlight={highlight()} style={{ flex: 1 }} />
+      </Panel>
+      <View class="rounded-xl border border-border bg-card px-4 py-3" style={{ width: wide() ? 340 : undefined, gap: 2 }}>
+        <View class="flex-row" style={{ gap: 8, marginBottom: 4 }}>
+          <Text class="text-sm font-medium text-foreground" style={{ flex: 1 }}>
+            Top functions
+          </Text>
+          <Text class="text-xs text-muted-foreground" style={{ width: 52, textAlign: "right" }}>
+            self
+          </Text>
+          <Text class="text-xs text-muted-foreground" style={{ width: 52, textAlign: "right" }}>
+            total
+          </Text>
+        </View>
+        <Each of={top}>
+          {(f, i) => (
+            <View
+              role="button"
+              testID={`top-${i()}`}
+              accessibilityState={{ selected: highlight() === f().name }}
+              onPress={() => highlight.set(highlight() === f().name ? "" : f().name)}
+              class={`rounded px-1 py-1 ${highlight() === f().name ? "bg-accent" : "hover:bg-accent"}`}
+              style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+            >
+              <Text class="font-mono text-xs text-foreground" style={{ flex: 1, numberOfLines: 1, textOverflow: "ellipsis-start" }}>
+                {f().name}
+              </Text>
+              <Text class="text-xs text-foreground" style={{ width: 52, textAlign: "right", fontVariant: ["tabular-nums"] }}>
+                {`${((f().self / profile.value) * 100).toFixed(1)}%`}
+              </Text>
+              <Text class="text-xs text-muted-foreground" style={{ width: 52, textAlign: "right", fontVariant: ["tabular-nums"] }}>
+                {`${((f().total / profile.value) * 100).toFixed(1)}%`}
+              </Text>
+            </View>
+          )}
+        </Each>
+      </View>
+    </View>
+  );
+
   return (
     <View class="bg-background" style={{ flex: 1, padding: 20, gap: 14 }}>
       <View class="flex-row flex-wrap items-center gap-3">
@@ -139,10 +326,35 @@ function App() {
             {`production · last 5 minutes · ${live() ? "live" : "paused"} · ${nativeBackend() ? "Rust" : "TypeScript"} backend`}
           </Text>
         </View>
+        <View role="tablist" class="flex-row rounded-lg bg-secondary p-1" style={{ gap: 2, marginLeft: 12 }}>
+          <Each of={TABS}>
+            {(item) => (
+              <View
+                role="tab"
+                testID={`tab-${item().id}`}
+                accessibilityState={{ selected: tab() === item().id }}
+                onPress={() => {
+                  if (item().id === "traces") traceList.set(logSource.recent(40));
+                  tab.set(item().id);
+                }}
+                class={`rounded-md px-3 py-1 ${tab() === item().id ? "bg-background" : "hover:bg-accent"}`}
+              >
+                <Text class={`text-sm ${tab() === item().id ? "text-foreground font-medium" : "text-muted-foreground"}`}>{item().label}</Text>
+              </View>
+            )}
+          </Each>
+        </View>
         <View style={{ flex: 1 }} />
         <Button label={live() ? "Pause" : "Resume"} onPress={() => live.update((v) => !v)} testID="live" />
-        <Button label="Reset zoom" onPress={() => sync.reset()} testID="reset" />
+        {tab() === "metrics" ? <Button label="Reset zoom" onPress={() => sync.reset()} testID="reset" /> : null}
       </View>
+      {tab() === "logs" ? logsPage() : tab() === "traces" ? tracesPage() : tab() === "profiles" ? profilesPage() : metricsPage()}
+    </View>
+  );
+
+  function metricsPage() {
+    return (
+    <View style={{ flex: 1, gap: 14 }}>
       <View class="flex-row flex-wrap" style={{ gap: 14 }}>
         <Stat label="Requests" value={formatValue(now().rate, "reqps")} testID="stat-rate" />
         <Stat
@@ -236,7 +448,8 @@ function App() {
         </Panel>
       </View>
     </View>
-  );
+    );
+  }
 }
 
 mount(App);

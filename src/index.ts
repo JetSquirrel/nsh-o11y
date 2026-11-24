@@ -13,7 +13,7 @@ export {
   type WritableSeriesStore,
 } from "./native";
 export { renderPlot, renderOverlay, renderStats, type Ctx2D, type PathFactory } from "./render";
-export { formatValue, formatTime, formatTimeFull, timeTicks, valueTicks, niceRange, niceStep, type Tick } from "./scale";
+export { formatValue, formatTime, formatTimeFull, timeStep, timeTicks, valueTicks, niceRange, niceStep, type Tick } from "./scale";
 export { PALETTE_LIGHT, PALETTE_DARK, withAlpha } from "./palette";
 export type {
   SeriesOptions,
@@ -26,3 +26,32 @@ export type {
   Unit,
   TimeZone,
 } from "./types";
+export { LogView, type LogViewProps } from "./LogView";
+export {
+  LogStore,
+  LOG_LEVELS,
+  LOG_LEVEL_COLORS,
+  type LogEntry,
+  type LogLevel,
+  type LogFilter,
+  type LogHistogram,
+  type LogStoreOptions,
+} from "./logs";
+export { LogVolumeEngine, renderLogVolume, renderLogVolumeOverlay } from "./logvolume";
+export { TraceWaterfall, type TraceWaterfallProps } from "./TraceWaterfall";
+export { TraceModel, type Span, type SpanEvent, type WaterfallRow } from "./traces";
+export { WaterfallEngine, renderWaterfall, renderWaterfallOverlay, type WaterfallOptions } from "./waterfall";
+export { FlameGraph, type FlameGraphProps } from "./FlameGraph";
+export {
+  profileFromFolded,
+  profileFromStacks,
+  profileFromTree,
+  sortProfile,
+  ancestry,
+  topFunctions,
+  matchedValue,
+  type ProfileNode,
+  type ProfileTreeInput,
+  type FunctionTotal,
+} from "./profile";
+export { FlameEngine, renderFlame, renderFlameOverlay, colorKey, type FlameFrame } from "./flame";
