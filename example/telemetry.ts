@@ -246,19 +246,30 @@ const PROGRAM: Frame[] = [
   { name: "runtime.mcall", weight: 0.04, children: [{ name: "runtime.schedule", weight: 1, children: [leaf("runtime.findRunnable")] }] },
 ];
 
+/**
+ * The release before: pricing rules were plain string compares (v2.14 moved them to regular expressions, the
+ * regression a diff shows) and responses were encoded with the slower reflection path (v2.14 made it cheaper).
+ */
+const V2_13: Record<string, number> = {
+  "checkout/pricing.applyRules": 0.05,
+  "encoding/json.(*Encoder).Encode": 0.2,
+  "runtime.gcBgMarkWorker": 0.1,
+};
+
 /** A CPU profile of the checkout service as folded stacks (`a;b;c count` per line), `samples` in all. */
-export function checkoutProfile(seed = 3, samples = 20_000): string {
+export function checkoutProfile(seed = 3, samples = 20_000, version: "v2.14" | "v2.13" = "v2.14"): string {
+  const w = (f: Frame) => (version === "v2.13" ? V2_13[f.name] ?? f.weight : f.weight);
   const r = rng(seed);
   const counts = new Map<string, number>();
   for (let i = 0; i < samples; i++) {
     let level: Frame[] | undefined = PROGRAM;
     const frames: string[] = [];
     while (level && level.length) {
-      const total = level.reduce((a, f) => a + f.weight, 0);
+      const total = level.reduce((a, f) => a + w(f), 0);
       let x = r() * total;
       let node: Frame = level[level.length - 1];
       for (const f of level) {
-        x -= f.weight;
+        x -= w(f);
         if (x <= 0) {
           node = f;
           break;

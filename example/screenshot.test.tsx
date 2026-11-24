@@ -42,4 +42,7 @@ test("screenshots: logs, a trace, a profile", async () => {
   await app.press("id:tab-profiles");
   await app.wait(500);
   await shot("profiles");
+  await app.press("id:compare");
+  await app.wait(500);
+  await shot("profiles-diff");
 }, 60_000);

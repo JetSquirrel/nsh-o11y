@@ -180,7 +180,10 @@ match and shows the share of samples that do. Frames under a third of a point wi
 very large profiles stay quick. `profileFromStacks`, `profileFromTree`, `topFunctions` (self and total per
 function, recursion counted once) and `matchedValue` work headless. Props: `profile` (a `ProfileNode`, folded
 text, or `{ name, value?, children? }`), `unit`, `direction`, `rowHeight`, `colorBy` (`"module"` / `"name"`),
-`toolbar`, `highlight`, `onSelect`.
+`toolbar`, `highlight`, `onSelect`, and `baseline`: a profile to compare with. Then the graph is a diff, as
+`diffProfiles(before, after)` makes it: the new profile's shape, each frame red where its share of the profile grew and
+blue where it shrank (changes under a quarter of a point stay neutral: sampling noise), and the tooltip gives both
+shares. The example compares v2.14 with v2.13 and shows the pricing regression.
 
 ## Rust backend
 
@@ -326,7 +329,7 @@ cd bench/web && bun install && bun run.ts     # every library on the same scenar
 - More O11y panels on the same engine: histograms / heatmaps (latency distributions), bar and stacked area,
   exemplars on time series linking to traces.
 - Traces: a span-duration minimap, and comparing two traces.
-- Profiles: diff flame graphs (before / after), and a sandwich view (a function's callers and callees).
+- Profiles: a sandwich view (a function's callers and callees).
 - Logs in the Rust backend, for tens of millions of lines.
 - A second y axis.
 - Keep the newest frame's paths in Rust and hand the canvas a native path handle instead of SVG text.

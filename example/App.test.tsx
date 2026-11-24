@@ -91,6 +91,20 @@ test("errors only: a failed trace opens on its failing span, with the exception 
   expect(app.texts().some((t) => t.startsWith("◆ exception"))).toBe(true);
 });
 
+test("compare with v2.13: the flame graph becomes a diff with a legend, and back", async () => {
+  const app = await open("./App.tsx", { width: 1240, height: 860 });
+  await app.waitFor("id:tab-profiles");
+  await app.press("id:tab-profiles");
+  await app.waitFor("id:compare");
+  expect(app.shows("id:flame-diff-legend")).toBe(false);
+  await app.press("id:compare");
+  await app.waitFor("id:flame-diff-legend");
+  expect(app.texts()).toContain("more than baseline");
+  await app.press("id:compare");
+  await app.wait(50);
+  expect(app.shows("id:flame-diff-legend")).toBe(false);
+});
+
 test("the profiles tab: the flame graph and the top functions", async () => {
   const app = await open("./App.tsx", { width: 1240, height: 860, platform: "windows" });
   await app.waitFor("id:tab-profiles");

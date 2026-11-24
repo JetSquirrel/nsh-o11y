@@ -167,6 +167,10 @@ function App() {
   const profile = profileFromFolded(checkoutProfile());
   const top = topFunctions(profile, 14);
   const highlight = signal("");
+  // The release before, for a diff: made the first time it is asked for.
+  const compare = signal(false);
+  let baselineProfile: ReturnType<typeof profileFromFolded> | undefined;
+  const baseline = () => (baselineProfile ??= profileFromFolded(checkoutProfile(4, 20_000, "v2.13")));
 
   // ---- A big one: the random walk, at a size picked below.
   const size = signal<number>(1_000_000);
@@ -315,10 +319,24 @@ function App() {
   const profilesPage = () => (
     <View style={{ flex: 1, flexDirection: wide() ? "row" : "column", gap: 14 }}>
       <Panel>
-        <Text class="text-sm font-medium text-foreground" style={{ marginBottom: 6 }}>
-          {`CPU profile · ${profile.value.toLocaleString()} samples`}
-        </Text>
-        <FlameGraph testID="flame" profile={profile} highlight={highlight()} style={{ flex: 1 }} />
+        <View class="flex-row items-center" style={{ gap: 8, marginBottom: 6 }}>
+          <Text class="text-sm font-medium text-foreground" style={{ flex: 1 }}>
+            {`CPU profile · v2.14 · ${profile.value.toLocaleString()} samples`}
+          </Text>
+          <Button
+            label="Compare with v2.13"
+            active={compare()}
+            onPress={() => compare.update((v) => !v)}
+            testID="compare"
+          />
+        </View>
+        <FlameGraph
+          testID="flame"
+          profile={profile}
+          baseline={compare() ? baseline() : undefined}
+          highlight={highlight()}
+          style={{ flex: 1 }}
+        />
       </Panel>
       <View class="rounded-xl border border-border bg-card px-4 py-3" style={{ width: wide() ? 340 : undefined, gap: 2 }}>
         <View class="flex-row" style={{ gap: 8, marginBottom: 4 }}>

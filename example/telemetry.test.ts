@@ -5,8 +5,8 @@ import { LogStore, LOG_LEVELS, type LogEntry, type LogLevel } from "../src/logs"
 import { LogVolumeEngine, renderLogVolume, renderLogVolumeOverlay } from "../src/logvolume";
 import { TraceModel, type Span } from "../src/traces";
 import { WaterfallEngine, renderWaterfall, renderWaterfallOverlay } from "../src/waterfall";
-import { ancestry, matchedValue, profileFromFolded, profileFromTree, topFunctions } from "../src/profile";
-import { FlameEngine, colorKey, renderFlame, renderFlameOverlay } from "../src/flame";
+import { ancestry, diffProfiles, diffRatio, matchedValue, profileFromFolded, profileFromTree, topFunctions } from "../src/profile";
+import { FlameEngine, colorKey, diffColor, renderFlame, renderFlameOverlay } from "../src/flame";
 import { fitText } from "../src/draw";
 import { timeStep } from "../src/scale";
 import { PALETTE_LIGHT } from "../src/palette";
@@ -281,6 +281,53 @@ describe("profiles", () => {
     const p = profileFromFolded(checkoutProfile(3, 5000));
     expect(p.value).toBe(5000);
     expect(topFunctions(p, 5).length).toBe(5);
+  });
+
+  test("a diff keeps the new shape, carries the baseline, and colors by the change in share", () => {
+    const before = profileFromFolded("main;parse 50\nmain;render 50\nmain;old 10\n");
+    const after = profileFromFolded("main;parse 30\nmain;render 50\nmain;new 20\n");
+    const d = diffProfiles(before, after);
+    expect(d.value).toBe(100);
+    expect(d.baseline).toBe(110);
+    const main = d.children[0];
+    const by = (n: string) => main.children.find((c) => c.name === n)!;
+    expect(by("parse").value).toBe(30);
+    expect(by("parse").baseline).toBe(50);
+    expect(by("new").baseline).toBe(0);
+    expect(by("old").value).toBe(0); // gone, but still there for search
+    expect(diffRatio(by("new"), d)).toBe(1);
+    expect(diffRatio(by("old"), d)).toBe(-1);
+    expect(diffRatio(by("parse"), d)).toBeLessThan(0);
+    // render: 50/110 → 50/100, a bigger share.
+    expect(diffRatio(by("render"), d)).toBeGreaterThan(0);
+    expect(diffRatio(by("render"), profileFromFolded("a 1\n"))).toBe(0); // not a diff
+    expect(diffColor(1)).not.toBe(diffColor(-1));
+    expect(diffColor(0.01)).toBe(diffColor(-0.01));
+    // The engine colors by it and the tooltip gives both shares.
+    const e = new FlameEngine();
+    e.setRoot(d);
+    e.setSize(600, 100);
+    e.layout();
+    const fr = e.frames.find((f) => f.node.name === "new")!;
+    expect(e.colorOf(fr.node)).toBe(diffColor(1));
+    expect(e.frameLines(fr).some((l) => l.text === "0.0% → 20.0% (+20.0 pts)")).toBe(true);
+    expect(e.frames.some((f) => f.node.name === "old")).toBe(false); // no width
+    renderFlame(ctx(600, 100), e, THEME, PATH);
+  });
+
+  test("the v2.13 baseline differs where the story says", () => {
+    const d = diffProfiles(profileFromFolded(checkoutProfile(4, 20_000, "v2.13")), profileFromFolded(checkoutProfile(3, 20_000)));
+    const find = (name: string) => {
+      const stack = [d];
+      while (stack.length) {
+        const n = stack.pop()!;
+        if (n.name === name) return n;
+        stack.push(...n.children);
+      }
+      throw new Error(name);
+    };
+    expect(diffRatio(find("checkout/pricing.applyRules"), d)).toBeGreaterThan(0.5);
+    expect(diffRatio(find("encoding/json.(*Encoder).Encode"), d)).toBeLessThan(-0.2);
   });
 
   test("color keys are modules", () => {

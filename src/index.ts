@@ -50,8 +50,10 @@ export {
   ancestry,
   topFunctions,
   matchedValue,
+  diffProfiles,
+  diffRatio,
   type ProfileNode,
   type ProfileTreeInput,
   type FunctionTotal,
 } from "./profile";
-export { FlameEngine, renderFlame, renderFlameOverlay, colorKey, type FlameFrame } from "./flame";
+export { FlameEngine, renderFlame, renderFlameOverlay, colorKey, diffColor, type FlameFrame } from "./flame";

@@ -14,6 +14,55 @@ export interface ProfileNode {
   children: ProfileNode[];
   parent: ProfileNode | null;
   depth: number;
+  /** In a diff (`diffProfiles`): the same stack's value in the baseline profile. */
+  baseline?: number;
+  /** In a diff: the baseline's self value. */
+  baselineSelf?: number;
+}
+
+/**
+ * The change from `before` to `after` as one tree: `after`'s shape and values, each node with its value in
+ * `before` as `baseline` (0 when the stack is new). Stacks only in `before` are kept with a value of 0, so
+ * they take no width but are still found by search and in the table. The root's two values are the
+ * profiles' totals: compare shares (`value / root.value` against `baseline / root.baseline`) when the two
+ * were sampled for different lengths of time.
+ */
+export function diffProfiles(before: ProfileNode, after: ProfileNode): ProfileNode {
+  const copy = (a: ProfileNode | undefined, b: ProfileNode | undefined, parent: ProfileNode | null): ProfileNode => {
+    const n: ProfileNode = {
+      name: (a ?? b)!.name,
+      value: a?.value ?? 0,
+      self: a?.self ?? 0,
+      children: [],
+      parent,
+      depth: parent ? parent.depth + 1 : 0,
+      baseline: b?.value ?? 0,
+      baselineSelf: b?.self ?? 0,
+    };
+    const bKids = new Map<string, ProfileNode>();
+    for (const c of b?.children ?? []) bKids.set(c.name, c);
+    for (const c of a?.children ?? []) {
+      n.children.push(copy(c, bKids.get(c.name), n));
+      bKids.delete(c.name);
+    }
+    for (const c of bKids.values()) n.children.push(copy(undefined, c, n));
+    return n;
+  };
+  const root = copy(after, before, null);
+  sortProfile(root, "value");
+  return root;
+}
+
+/**
+ * How much a node's share of the profile changed, from -1 (it was all of the baseline and is gone) to 1 (it
+ * is new): (share after − share before) / the larger share. 0 when it is not a diff or did not change.
+ */
+export function diffRatio(n: ProfileNode, root: ProfileNode): number {
+  if (n.baseline === undefined || root.baseline === undefined) return 0;
+  const a = root.value > 0 ? n.value / root.value : 0;
+  const b = root.baseline > 0 ? n.baseline / root.baseline : 0;
+  const m = Math.max(a, b);
+  return m > 0 ? (a - b) / m : 0;
 }
 
 /** A tree as a profiler might give it: `value` may be left out (the sum of the children's). */

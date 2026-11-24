@@ -21,8 +21,8 @@ import {
   type WheelEvent,
 } from "nsh";
 import { Input } from "nsh/base";
-import { FlameEngine, renderFlame, renderFlameOverlay } from "./flame";
-import { ancestry, matchedValue, profileFromFolded, profileFromTree, type ProfileNode, type ProfileTreeInput } from "./profile";
+import { diffColor, FlameEngine, renderFlame, renderFlameOverlay } from "./flame";
+import { ancestry, diffProfiles, matchedValue, profileFromFolded, profileFromTree, type ProfileNode, type ProfileTreeInput } from "./profile";
 import { fontOf, type Ctx2D } from "./render";
 import { formatValue, type Unit } from "./scale";
 import { isDark, resolveTheme } from "./theme";
@@ -31,6 +31,11 @@ import type { ChartColors, ChartTheme } from "./types";
 export interface FlameGraphProps {
   /** The profile: a tree from `profileFromFolded` / `profileFromStacks`, folded stacks as text, or a nested tree. */
   profile: ProfileNode | string | ProfileTreeInput;
+  /**
+   * A profile to compare with (before a deploy, say): frames are colored by how their share of the profile
+   * changed, red where it grew and blue where it shrank, and the tooltip gives both.
+   */
+  baseline?: ProfileNode | string | ProfileTreeInput;
   /** What values are: "short" for samples (the default), "ns" or "ms" for time, "bytes" for allocations. */
   unit?: Unit;
   /** The root at the top (an icicle, the default) or at the bottom (a classic flame). */
@@ -71,12 +76,17 @@ export function FlameGraph(props: FlameGraphProps) {
   let plotRef: ViewRef | undefined;
 
   const theme = computed<ChartTheme>(() => resolveTheme(props.colors, props.fontFamily, props.fontSize));
-  const root = computed<ProfileNode>(() => {
-    const p = props.profile;
+  const toTree = (p: ProfileNode | string | ProfileTreeInput): ProfileNode => {
     if (typeof p === "string") return untracked(() => profileFromFolded(p));
     if ((p as ProfileNode).self !== undefined && (p as ProfileNode).depth !== undefined) return p as ProfileNode;
     return untracked(() => profileFromTree(p as ProfileTreeInput));
+  };
+  const root = computed<ProfileNode>(() => {
+    const p = toTree(props.profile);
+    const b = props.baseline;
+    return b ? untracked(() => diffProfiles(toTree(b), p)) : p;
   });
+  const diffing = () => root().baseline !== undefined;
 
   effect(() => {
     const h = props.highlight;
@@ -218,6 +228,14 @@ export function FlameGraph(props: FlameGraphProps) {
               )}
             </Each>
           </View>
+          {diffing() ? (
+            <View class="flex-row items-center" style={{ gap: 6 }} testID={props.testID ? `${props.testID}-diff-legend` : undefined}>
+              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: diffColor(-1, isDark(theme())) }} />
+              <Text class="text-xs text-muted-foreground">less</Text>
+              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: diffColor(1, isDark(theme())) }} />
+              <Text class="text-xs text-muted-foreground">more than baseline</Text>
+            </View>
+          ) : null}
           {search().trim() ? (
             <Text class="text-xs text-muted-foreground" testID={props.testID ? `${props.testID}-matched` : undefined}>
               {`${((matched() / (root().value || 1)) * 100).toFixed(1)}% matched`}

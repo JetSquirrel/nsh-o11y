@@ -7,7 +7,7 @@
  */
 import { drawTooltip, fitText, hashString, r1, RectBatch, type TooltipLine } from "./draw";
 import { withAlpha } from "./palette";
-import type { ProfileNode } from "./profile";
+import { diffRatio, type ProfileNode } from "./profile";
 import { fontOf, type Ctx2D, type PathFactory } from "./render";
 import { formatValue, type Unit } from "./scale";
 import type { ChartTheme } from "./types";
@@ -37,6 +37,25 @@ function hsl(h: number, s: number, l: number) {
 const SHADES = 18;
 const WARM_LIGHT = Array.from({ length: SHADES }, (_, i) => hsl(6 + (i * 44) / SHADES, 0.82, 0.62 + ((i * 7) % 5) * 0.025));
 const WARM_DARK = Array.from({ length: SHADES }, (_, i) => hsl(6 + (i * 44) / SHADES, 0.62, 0.5 + ((i * 7) % 5) * 0.02));
+
+const DIFF_STEPS = 6;
+const diffRamp = (dark: boolean) =>
+  Array.from({ length: DIFF_STEPS * 2 + 1 }, (_, i) => {
+    const t = (i - DIFF_STEPS) / DIFF_STEPS; // -1 (shrank: blue) … 0 … 1 (grew: red)
+    const a = Math.abs(t);
+    if (a === 0) return dark ? hsl(30, 0.06, 0.62) : hsl(30, 0.08, 0.86);
+    return hsl(t > 0 ? 2 : 212, 0.35 + 0.45 * a, dark ? 0.66 - 0.16 * a : 0.86 - 0.26 * a);
+  });
+const DIFF_LIGHT = diffRamp(false);
+const DIFF_DARK = diffRamp(true);
+
+/** A diff frame's color: red where its share grew, blue where it shrank, neutral within ±5%. */
+export function diffColor(ratio: number, dark = false) {
+  const ramp = dark ? DIFF_DARK : DIFF_LIGHT;
+  if (Math.abs(ratio) < 0.05) return ramp[DIFF_STEPS];
+  const k = Math.max(1, Math.round(Math.abs(ratio) * DIFF_STEPS));
+  return ramp[DIFF_STEPS + (ratio > 0 ? k : -k)];
+}
 
 /** What a frame's color is picked by: its module (`pkg.Type.method` → `pkg.Type`, `a::b::f` → `a::b`, `dir/file` → `dir`). */
 export function colorKey(name: string) {
@@ -222,7 +241,20 @@ export class FlameEngine {
     return !!h && n.name.toLowerCase().indexOf(h) >= 0;
   }
 
+  /** Minimum change in share (percentage points) colored in a diff: smaller ones are sampling noise. */
+  diffThreshold = 0.25;
+
+  /** A node's diff ratio, 0 when its share moved less than `diffThreshold` points. */
+  diffOf(n: ProfileNode): number {
+    const root = this.root;
+    if (!root || root.baseline === undefined || n.baseline === undefined) return 0;
+    const a = root.value > 0 ? n.value / root.value : 0;
+    const b = root.baseline > 0 ? n.baseline / root.baseline : 0;
+    return Math.abs(a - b) * 100 < this.diffThreshold ? 0 : diffRatio(n, root);
+  }
+
   colorOf(n: ProfileNode) {
+    if (this.root && this.root.baseline !== undefined) return diffColor(this.diffOf(n), this.dark);
     const key = this.colorBy === "module" ? colorKey(n.name) : n.name;
     const ck = (this.dark ? "d" : "l") + key;
     let c = this.colorCache.get(ck);
@@ -245,6 +277,18 @@ export class FlameEngine {
       { text: `self ${formatValue(n.self, this.unit)} · ${pct(n.self)}`, muted: true },
     ];
     if (this.focus && this.focus !== this.root && !fr.above) lines.push({ text: `${((n.value / (this.focus.value || 1)) * 100).toFixed(1)}% of ${this.focus.name}`, muted: true });
+    const root = this.root;
+    if (root && root.baseline !== undefined && n.baseline !== undefined) {
+      const share = (v: number, t: number) => (t > 0 ? (v / t) * 100 : 0);
+      const b = share(n.baseline, root.baseline);
+      const a = share(n.value, root.value);
+      const d = a - b;
+      lines.push({
+        text: `${b.toFixed(1)}% → ${a.toFixed(1)}% (${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(1)} pts)`,
+        color: diffColor(this.diffOf(n), this.dark),
+      });
+      lines.push({ text: `baseline ${formatValue(n.baseline, this.unit)} · self ${formatValue(n.baselineSelf ?? 0, this.unit)}`, muted: true });
+    }
     return lines;
   }
 }
