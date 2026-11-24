@@ -2,22 +2,568 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>nsh-o11y</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nsh-o11y · time-series charts for Native Shell</title>
+<meta name="description" content="Observability charts for Native Shell (NSH), shipped as an nshm: a TSX TimeSeriesChart with an opt-in Rust backend. Millions of points at a few milliseconds a frame, live data, synced panels, on iOS, Android, desktop and the web.">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="modulepreload" href="./nsh.d1ddb2b705.js">
-<script type="application/json" id="nsh-fetch">["nsh.e2942b8378.wasm","app.7f52a856af.js"]</script>
-<script src="nsh-prefetch.4e97bd2e90.js"></script>
-<link rel="stylesheet" href="nsh-page.6c2c70f7ae.css">
+<meta property="og:title" content="nsh-o11y">
+<meta property="og:description" content="Time-series charts for Native Shell that stay fast at 10 million points.">
+<meta property="og:image" content="https://jetsquirrel.github.io/nsh-o11y/assets/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M3 22L9 15L14 19L20 7L25 13L29 10' stroke='%232a78d6' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M3 28H29' stroke='%23898781' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #fbfaf8;
+    --surface: #ffffff;
+    --surface-2: #f3f1ed;
+    --text: #1b1a18;
+    --muted: #64615b;
+    --border: #e4e1db;
+    --edge: #b9b5ad;
+    --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100;
+    --c5: #e87ba4; --c6: #008300; --c7: #6250d6; --c8: #e34948;
+    --code-bg: #f3f1ed;
+    --tok-k: #6250d6; --tok-s: #008300; --tok-c: #8a867e; --tok-t: #2a78d6;
+    --shadow: 0 1px 2px rgb(0 0 0 / .04), 0 12px 32px -12px rgb(0 0 0 / .14);
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121211;
+      --surface: #1b1b19;
+      --surface-2: #232320;
+      --text: #ecebe8;
+      --muted: #a29f98;
+      --border: #2f2e2b;
+      --edge: #55534e;
+      --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500;
+      --c5: #d55181; --c6: #0ca30c; --c7: #9085e9; --c8: #e66767;
+      --code-bg: #1b1b19;
+      --tok-k: #a99ff0; --tok-s: #6fcf7a; --tok-c: #7c7972; --tok-t: #6aa8f0;
+      --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 16px 40px -16px rgb(0 0 0 / .6);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--c1); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre { font-family: var(--mono); font-size: 0.875em; }
+  :not(pre) > code { background: var(--surface-2); padding: .1em .35em; border-radius: 4px; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* nav */
+  header.nav {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  header.nav .wrap { display: flex; align-items: center; gap: 24px; height: 56px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--text); letter-spacing: -.01em; }
+  .brand:hover { text-decoration: none; }
+  .brand svg { width: 22px; height: 22px; }
+  header.nav nav { display: flex; gap: 20px; margin-left: auto; font-size: 14px; }
+  header.nav nav a { color: var(--muted); }
+  header.nav nav a:hover { color: var(--text); text-decoration: none; }
+
+  /* hero */
+  .hero { padding: 72px 0 40px; position: relative; overflow: hidden; }
+  .hero-bg {
+    position: absolute; inset: 0 0 auto 0; height: 560px; z-index: -1; opacity: .55; pointer-events: none;
+    -webkit-mask-image: linear-gradient(to right, transparent 40%, #000 80%);
+    mask-image: linear-gradient(to right, transparent 40%, #000 80%);
+  }
+  .eyebrow { font: 500 13px/1 var(--mono); color: var(--muted); letter-spacing: .02em; }
+  h1 { font-size: clamp(36px, 6vw, 60px); line-height: 1.05; letter-spacing: -.035em; margin: 16px 0 20px; font-weight: 700; max-width: 14em; }
+  h1 em { font-style: normal; color: var(--c1); }
+  .lede { font-size: clamp(17px, 2vw, 20px); color: var(--muted); max-width: 38em; margin: 0 0 28px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px;
+    border-radius: 8px; font-weight: 550; font-size: 15px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text);
+  }
+  .btn:hover { text-decoration: none; border-color: var(--edge); }
+  .btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .btn.primary:hover { opacity: .88; }
+  .install {
+    display: inline-flex; align-items: center; gap: 10px; height: 42px; padding: 0 8px 0 14px;
+    border: 1px dashed var(--edge); border-radius: 8px; font: 14px var(--mono); color: var(--muted);
+    max-width: 100%;
+  }
+  .install b { color: var(--text); font-weight: 500; }
+  .install > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .install button {
+    border: 0; background: var(--surface-2); color: var(--muted); border-radius: 5px;
+    font: 12px var(--sans); padding: 5px 9px; cursor: pointer; flex: none;
+  }
+  .install button:hover { color: var(--text); }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px 36px; margin-top: 32px; }
+  .stats div { display: grid; gap: 2px; }
+  .stats b { font: 600 26px/1.1 var(--sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .stats span { font-size: 13px; color: var(--muted); }
+
+  /* live demo frame */
+  .demo { margin: 40px 0 0; }
+  .window {
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    background: var(--surface); box-shadow: var(--shadow);
+  }
+  .window-bar {
+    display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 14px;
+    border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: 13px; color: var(--muted);
+  }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--border); display: block; }
+  .window-bar .title { flex: 1; text-align: center; font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .window-bar a { font-size: 13px; white-space: nowrap; }
+  .frame { position: relative; height: min(820px, 88vh); min-height: 560px; }
+  .frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .frame .loading {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--muted); font-size: 14px;
+  }
+  .hint { margin: 14px 2px 0; font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  kbd {
+    font: 12px var(--mono); padding: 1px 6px; border-radius: 4px;
+    border: 1px solid var(--border); border-bottom-width: 2px; background: var(--surface);
+  }
+
+  /* sections */
+  section { padding: 88px 0 0; }
+  h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.025em; line-height: 1.15; margin: 0 0 12px; }
+  .sub { color: var(--muted); max-width: 42em; margin: 0 0 36px; font-size: 17px; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px;
+    min-width: 0;
+  }
+  .card h3 { margin: 12px 0 6px; font-size: 17px; letter-spacing: -.01em; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .card svg.ic { width: 44px; height: 44px; display: block; }
+
+  /* code */
+  .split { display: grid; grid-template-columns: 5fr 7fr; gap: 40px; align-items: start; }
+  .split > * { min-width: 0; }
+  pre {
+    margin: 0; padding: 20px 22px; background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 12px; overflow-x: auto; line-height: 1.65;
+  }
+  .k { color: var(--tok-k); } .s { color: var(--tok-s); } .c { color: var(--tok-c); } .t { color: var(--tok-t); }
+  ul.points { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+  ul.points li { padding-left: 22px; position: relative; color: var(--muted); }
+  ul.points li b { color: var(--text); font-weight: 600; }
+  ul.points li::before {
+    content: ""; position: absolute; left: 0; top: .55em; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--c1);
+  }
+  ul.points li:nth-child(2)::before { background: var(--c2); }
+  ul.points li:nth-child(3)::before { background: var(--c3); }
+  ul.points li:nth-child(4)::before { background: var(--c4); }
+  ul.points li:nth-child(5)::before { background: var(--c7); }
+
+  /* benchmark */
+  .bench { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .bench .wide { grid-column: 1 / -1; }
+  .bars { display: grid; gap: 12px; margin-top: 18px; }
+  .bar-row { display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: center; font-size: 14px; }
+  .bar-row .lbl { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-row .lbl.me { color: var(--text); font-weight: 600; }
+  .track { position: relative; height: 26px; }
+  .fill {
+    height: 100%; border-radius: 0 5px 5px 0; background: var(--edge);
+    display: flex; align-items: center; justify-content: flex-end; min-width: 60px;
+  }
+  .fill.me { background: var(--c1); }
+  .fill.off { background: repeating-linear-gradient(-45deg, var(--edge) 0 8px, color-mix(in srgb, var(--edge) 60%, transparent) 8px 16px); }
+  .fill span { font: 12px var(--mono); color: #fff; padding-right: 8px; white-space: nowrap; }
+  .fill:not(.me) span { color: var(--text); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); }
+  th { font-weight: 550; color: var(--muted); font-size: 13px; }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+  tr.me td { color: var(--text); font-weight: 600; }
+  tr.me td.num { color: var(--c1); }
+  .note { font-size: 13px; color: var(--muted); margin-top: 14px; }
+  .bars + .note { margin-top: 22px; }
+  .tabs { display: inline-flex; gap: 4px; padding: 3px; background: var(--surface-2); border-radius: 8px; margin-top: 14px; }
+  .tabs button {
+    border: 0; background: transparent; color: var(--muted); font: 500 13px var(--sans);
+    padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  }
+  .tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+
+  /* compare */
+  .compare { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+  .compare table { margin: 0; min-width: 820px; }
+  .compare th, .compare td { padding: 12px 16px; vertical-align: top; }
+  .compare tr:last-child td { border-bottom: 0; }
+  .compare td:first-child { color: var(--muted); white-space: nowrap; }
+  .compare th:nth-child(2), .compare td:nth-child(2) { background: color-mix(in srgb, var(--c1) 7%, transparent); color: var(--text); font-weight: 550; }
+  .y { color: var(--c6); } .n { color: var(--muted); }
+
+  /* footer */
+  .closing { text-align: center; padding: 96px 0 32px; }
+  .closing .cta { justify-content: center; }
+  footer { border-top: 1px solid var(--border); padding: 28px 0 40px; margin-top: 72px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .split, .bench { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .wrap { padding: 0 16px; }
+    header.nav nav a.opt { display: none; }
+    .grid { grid-template-columns: 1fr; }
+    .hero { padding-top: 48px; }
+    .install { width: 100%; justify-content: space-between; }
+    .bar-row { grid-template-columns: 96px 1fr; font-size: 13px; }
+    section { padding-top: 64px; }
+    .frame { min-height: 620px; height: 80vh; }
+    .window-bar .title { display: none; }
+    .window-bar a { margin-left: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
 </head>
 <body>
-<div id="app"></div>
-<div id="status" role="status" aria-live="polite"><div class="spinner" aria-label="Loading"></div></div>
-<noscript><div id="nojs">nsh-o11y needs JavaScript.</div></noscript>
-<script type="application/json" id="nsh-app">{"id":"dev.nsho11y.example","wasm":"nsh.e2942b8378.wasm","code":"app.7f52a856af.js","capabilities":null,"rust":false,"assets":{},"data":{"syntaxes":"nsh-syntaxes.ea0da56d04.bin","math":"nsh-math.cc869361ca.bin"},"fonts":[],"chunkFonts":{},"chunks":{},"sides":{},"chunkSides":{},"nativeExports":{"nsh":["Canvas","OffscreenCanvas","Path2D","cleanup","colorScheme","computed","effect","mount","signal","token","untracked","windowSize"],"nsh:rt":["append","bindProp","component","each","element","insert","prop","setup","text"]},"entryChunks":[],"host":null,"runtime":"./nsh.d1ddb2b705.js","linked":true}</script>
-<script type="module" src="nsh-start.40ff64d01a.js"></script>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 28H29" stroke="var(--edge)" stroke-width="2"/><path d="M3 22L9 15L14 19L20 7L25 13L29 10" stroke="var(--c1)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      nsh-o11y
+    </a>
+    <nav>
+      <a href="#features" class="opt">Features</a>
+      <a href="#performance" class="opt">Performance</a>
+      <a href="#compare" class="opt">Compare</a>
+      <a href="https://github.com/JetSquirrel/nsh-o11y#readme">Docs</a>
+      <a href="https://github.com/JetSquirrel/nsh-o11y">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <svg class="hero-bg" id="hero-bg" aria-hidden="true"></svg>
+    <div class="wrap">
+      <div class="eyebrow">v0.1.0 · for Native Shell 0.6+ · Apache-2.0</div>
+      <h1>Time-series charts that stay fast at <em>10 million</em> points.</h1>
+      <p class="lede">
+        Observability charts for <a href="https://nsh.dev">Native Shell</a>: a TSX <code>TimeSeriesChart</code> with an
+        opt-in Rust backend. Live metrics, zoom, synced panels, thresholds and deploy markers, drawn on NSH's native
+        canvas on iOS, Android, desktop and the web.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="demo/">Open the live demo →</a>
+        <a class="btn" href="#performance">Benchmarks</a>
+        <span class="install"><span><b>nsh add</b> github:JetSquirrel/nsh-o11y</span><button type="button" data-copy="nsh add github:JetSquirrel/nsh-o11y">Copy</button></span>
+      </div>
+      <div class="stats" aria-label="Headline numbers">
+        <div><b>3.5 ms</b><span>a full-view frame of 10M points</span></div>
+        <div><b>50–65×</b><span>faster than uPlot, ECharts, Chart.js at 10M</span></div>
+        <div><b>0.4 ms</b><span>a live frame, 1M points kept</span></div>
+        <div><b>0</b><span>one-sample spikes dropped</span></div>
+      </div>
+
+      <div class="demo">
+        <div class="window">
+          <div class="window-bar">
+            <div class="dots"><i></i><i></i><i></i></div>
+            <div class="title">example/App.tsx · running on NSH's web runtime</div>
+            <a href="demo/" target="_blank" rel="noopener">Full screen ↗</a>
+          </div>
+          <div class="frame">
+            <div class="loading">Loading the NSH runtime…</div>
+            <iframe src="demo/" title="nsh-o11y live demo: a service dashboard" loading="lazy"></iframe>
+          </div>
+        </div>
+        <div class="hint">
+          <span>Drag to zoom to a range · <kbd>Shift</kbd>-drag pans</span>
+          <span>Scroll or pinch to zoom · double-click resets</span>
+          <span><kbd>←</kbd><kbd>→</kbd> step the cursor · <kbd>Backspace</kbd> back · <kbd>0</kbd> reset</span>
+          <span>Click a legend entry to hide a series</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>Built for dashboards that never stop</h2>
+      <p class="sub">A frame costs what the plot's width does, not what the data does. Everything else an O11y panel needs comes with it.</p>
+      <div class="grid">
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><g fill="var(--c1)"><rect x="5" y="30" width="34" height="5" rx="1.5"/><rect x="5" y="22" width="16" height="5" rx="1.5" opacity=".75"/><rect x="23" y="22" width="16" height="5" rx="1.5" opacity=".75"/><rect x="5" y="14" width="7" height="5" rx="1.5" opacity=".5"/><rect x="14" y="14" width="7" height="5" rx="1.5" opacity=".5"/><rect x="23" y="14" width="7" height="5" rx="1.5" opacity=".5"/><rect x="32" y="14" width="7" height="5" rx="1.5" opacity=".5"/></g><path d="M5 8l5 3 4-5 5 4 5-3 5 2 5-2 5 3" stroke="var(--c2)" stroke-width="1.6" fill="none"/></svg>
+          <h3>Level of detail, exactly</h3>
+          <p>Each series keeps a min/max pyramid. A frame takes the first, min, max and last of each pixel column (M4), so a spike one sample wide in ten million is still drawn.</p>
+        </div>
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="13" fill="none" stroke="var(--edge)" stroke-width="1.5"/><circle cx="22" cy="22" r="7" fill="none" stroke="var(--c2)" stroke-width="3"/><g stroke="var(--c2)" stroke-width="3" stroke-linecap="round"><path d="M22 6v4M22 34v4M6 22h4M34 22h4"/></g></svg>
+          <h3>Opt-in Rust backend</h3>
+          <p>Register it and samples live in Rust: they cross once, when appended, and each frame one SVG path per series comes back. Past NSH's 256 MB JS heap, to hundreds of millions of samples.</p>
+        </div>
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><path d="M5 30l6-4 5 3 6-9 5 4 5-7" stroke="var(--c1)" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"/><circle cx="37" cy="17" r="3.5" fill="var(--c8)"/><circle cx="37" cy="17" r="7" fill="none" stroke="var(--c8)" stroke-width="1.2" opacity=".5"/></svg>
+          <h3>Live data</h3>
+          <p><code>append</code> one sample or a batch. <code>maxPoints</code> keeps a window by shifting the pyramid, not rebuilding it; <code>window</code> shows the last N minutes and follows.</p>
+        </div>
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><rect x="22" y="6" width="9" height="32" fill="var(--c8)" opacity=".15"/><path d="M14 6v32" stroke="var(--c7)" stroke-width="1.5" stroke-dasharray="2 2"/><path d="M4 18h36" stroke="var(--c8)" stroke-width="1.5" stroke-dasharray="4 3"/><path d="M4 32l7-3 6 2 6-10 5 3 5-4 7 2" stroke="var(--c1)" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>
+          <h3>Made for O11y</h3>
+          <p>Units (<code>reqps</code>, <code>ms</code>, <code>bytes</code>, <code>percent</code>…), calendar-aware time axes, SLO thresholds, deploy and incident annotations, gaps, steps and fills.</p>
+        </div>
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><rect x="4" y="5" width="36" height="15" rx="3" fill="none" stroke="var(--edge)" stroke-width="1.5"/><rect x="4" y="24" width="36" height="15" rx="3" fill="none" stroke="var(--edge)" stroke-width="1.5"/><path d="M8 15l6-4 6 2 6-5 6 3 4-2M8 34l6-2 6 1 6-6 6 2 4-1" stroke="var(--c1)" stroke-width="1.6" fill="none"/><path d="M26 3v38" stroke="var(--c2)" stroke-width="1.6"/></svg>
+          <h3>Synced panels</h3>
+          <p><code>createChartSync()</code> shares the crosshair and the zoom across every chart on the page. Two canvases per chart: moving the pointer never redraws the data.</p>
+        </div>
+        <div class="card">
+          <svg class="ic" viewBox="0 0 44 44" aria-hidden="true"><rect x="5" y="12" width="34" height="20" rx="3" fill="none" stroke="var(--edge)" stroke-width="1.5"/><g fill="var(--text)"><rect x="9" y="16" width="5" height="5" rx="1"/><rect x="16" y="16" width="5" height="5" rx="1"/><rect x="23" y="16" width="5" height="5" rx="1"/><rect x="30" y="16" width="5" height="5" rx="1"/><rect x="13" y="24" width="18" height="4" rx="1"/></g></svg>
+          <h3>Accessible, headless, exportable</h3>
+          <p>Keyboard navigation, a screen-reader label with every value at the cursor, PNG export. The store, engine and renderer are plain TypeScript you can run without the view.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="use">
+    <div class="wrap split">
+      <div>
+        <h2>A few lines of TSX</h2>
+        <p class="sub" style="margin-bottom:24px">Make a store, append to it, hand it to the chart.</p>
+        <ul class="points">
+          <li><b>Any data source.</b> A store from <code>createTimeSeries</code>, or plain arrays: <code>{ x, ys }</code>. <code>NaN</code> is a gap.</li>
+          <li><b>Reactive controller.</b> <code>range()</code>, <code>following()</code> and <code>cursor()</code> are signals; <code>setRange</code>, <code>zoom</code>, <code>back</code>, <code>toImage</code>.</li>
+          <li><b>Rust when you need it.</b> One call to <code>setNativeBackend</code>; every store after it lives in Rust, and apps without Rust keep working.</li>
+          <li><b>Follows your theme.</b> Colors come from NSH theme tokens, light and dark, or override any of them.</li>
+          <li><b>Draws the same everywhere.</b> Rust and TypeScript trace identical paths; the tests check it.</li>
+        </ul>
+      </div>
+      <pre><code><span class="k">import</span> { mount } <span class="k">from</span> <span class="s">"nsh"</span>;
+<span class="k">import</span> { TimeSeriesChart, createChartSync,
+         createTimeSeries } <span class="k">from</span> <span class="s">"nsh-o11y"</span>;
+
+<span class="k">const</span> latency = <span class="t">createTimeSeries</span>({ series: <span class="s">3</span>, maxPoints: <span class="s">100_000</span> });
+<span class="t">setInterval</span>(() =&gt;
+  latency.<span class="t">append</span>(Date.<span class="t">now</span>(), [<span class="t">p50</span>(), <span class="t">p95</span>(), <span class="t">p99</span>()]), <span class="s">1000</span>);
+
+<span class="k">function</span> <span class="t">App</span>() {
+  <span class="k">const</span> sync = <span class="t">createChartSync</span>();
+  <span class="k">return</span> (
+    &lt;<span class="t">TimeSeriesChart</span>
+      title=<span class="s">"Latency"</span>
+      data={latency}
+      series={[{ label: <span class="s">"p50"</span> }, { label: <span class="s">"p95"</span> }, { label: <span class="s">"p99"</span> }]}
+      unit=<span class="s">"ms"</span>
+      window={<span class="s">15</span> * <span class="s">60_000</span>}            <span class="c">// the last 15 min, live</span>
+      thresholds={[{ value: <span class="s">250</span>, label: <span class="s">"SLO"</span> }]}
+      annotations={[{ time: deployedAt, label: <span class="s">"deploy v2.14"</span> }]}
+      sync={sync}
+      style={{ flex: <span class="s">1</span> }}
+    /&gt;
+  );
+}
+
+<span class="t">mount</span>(App);</code></pre>
+    </div>
+  </section>
+
+  <section id="performance">
+    <div class="wrap">
+      <h2>Faster than the charts you know</h2>
+      <p class="sub">The same data, the same 1000 × 300 plot, each library set up as its docs recommend for big series, each in a fresh headless Edge. nsh-o11y runs its own TypeScript engine on the same page, so the comparison is like for like. JavaScript time per frame; lower is better.</p>
+      <div class="bench">
+        <div class="card wide">
+          <h3 style="margin-top:0">Full-view frame</h3>
+          <p>The whole series on screen, recomputed, as a pan, a resize or new data needs.</p>
+          <div class="tabs" role="tablist" aria-label="Number of samples">
+            <button type="button" role="tab" data-n="100k" aria-selected="false">100k</button>
+            <button type="button" role="tab" data-n="1M" aria-selected="false">1M</button>
+            <button type="button" role="tab" data-n="10M" aria-selected="true">10M</button>
+          </div>
+          <div class="bars" id="bars" role="img"></div>
+          <p class="note">Plotly (<code>scattergl</code>) draws on the GPU, which isn't in JavaScript time: once its upload is done (14 s at 10M), a frame mostly moves a camera: 18.7, 18 and 14.5 ms.</p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Live and dashboards</h3>
+          <p>Live: 1M samples kept, 3000 in view, one appended per frame. Dashboard: 24 panels × 3 series × 20k, all redrawn.</p>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Library</th><th class="num">Live</th><th class="num">Dashboard</th></tr></thead>
+              <tbody>
+                <tr class="me"><td>nsh-o11y</td><td class="num">0.41 ms</td><td class="num">31 ms</td></tr>
+                <tr><td>uPlot</td><td class="num">0.43 ms</td><td class="num">75 ms</td></tr>
+                <tr><td>Dygraphs</td><td class="num">46 ms</td><td class="num">531 ms</td></tr>
+                <tr><td>Chart.js</td><td class="num">124 ms</td><td class="num">176 ms</td></tr>
+                <tr><td>ECharts</td><td class="num">1073 ms</td><td class="num">152 ms</td></tr>
+                <tr><td>Plotly</td><td class="num">1785 ms</td><td class="num">n/a¹</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note">ECharts, Chart.js and Plotly re-ingest the whole dataset on each update. ¹ Browsers keep about 16 WebGL contexts.</p>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Zooming in</h3>
+          <p>A wheel zoom, 1.25× a frame, toward the middle.</p>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Library</th><th class="num">1M</th><th class="num">10M</th></tr></thead>
+              <tbody>
+                <tr class="me"><td>nsh-o11y</td><td class="num">2.1 ms</td><td class="num">2.4 ms</td></tr>
+                <tr><td>uPlot</td><td class="num">6.1 ms</td><td class="num">28.5 ms</td></tr>
+                <tr><td>ECharts</td><td class="num">24 ms</td><td class="num">143 ms</td></tr>
+                <tr><td>Chart.js</td><td class="num">57 ms</td><td class="num">27 ms</td></tr>
+                <tr><td>Plotly</td><td class="num">35 ms</td><td class="num">55 ms</td></tr>
+                <tr><td>Dygraphs</td><td class="num">81 ms</td><td class="num">2862 ms</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note">Creating the chart with its first draw, 10M samples: nsh-o11y 246 ms, uPlot 268, Chart.js 335, ECharts 628.</p>
+        </div>
+        <div class="card wide">
+          <h3 style="margin-top:0">Inside NSH: TypeScript or Rust</h3>
+          <p>NSH runs TSX on QuickJS, an interpreter, everywhere but the web. The Rust store does the per-sample work natively and brings an NSH app to browser speed or better. Measured with <code>nsh test perf</code>.</p>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Samples</th><th class="num">TypeScript, full view</th><th class="num">Rust, full view</th><th class="num">Rust, zooming</th><th class="num">Rust, load</th></tr></thead>
+              <tbody>
+                <tr><td>100,000</td><td class="num">14.2 ms</td><td class="num">1.8 ms</td><td class="num">0.84 ms</td><td class="num">6.6 ms</td></tr>
+                <tr><td>1,000,000</td><td class="num">20.2 ms</td><td class="num">2.6 ms</td><td class="num">1.0 ms</td><td class="num">79 ms</td></tr>
+                <tr><td>10,000,000</td><td class="num">out of memory²</td><td class="num">4.4 ms</td><td class="num">3.2 ms</td><td class="num">1277 ms</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note">² NSH caps the JS heap at 256 MB, so the TypeScript store holds about 2 million samples. Live (1M kept): 2.1 ms TypeScript, 0.94 ms Rust. 24-panel dashboard: 491 ms TypeScript, 46 ms Rust. Method and every figure: <a href="https://github.com/JetSquirrel/nsh-o11y/blob/main/bench/README.md">bench/README.md</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="compare">
+    <div class="wrap">
+      <h2>How it compares</h2>
+      <p class="sub">Browser chart libraries need a DOM, so none of them run inside an NSH app off the web. nsh-o11y is built for it, and holds its own in the browser too.</p>
+      <div class="compare">
+        <table>
+          <thead><tr><th></th><th>nsh-o11y</th><th>uPlot</th><th>ECharts</th><th>Chart.js</th><th>Plotly</th></tr></thead>
+          <tbody>
+            <tr><td>Runs inside NSH</td><td><span class="y">✓</span> iOS · Android · desktop · web</td><td class="n">✕ DOM</td><td class="n">✕ DOM</td><td class="n">✕ DOM</td><td class="n">✕ DOM, WebGL</td></tr>
+            <tr><td>Big series</td><td>min/max pyramid + M4: cost follows the width</td><td>draws every point in view</td><td>LTTB sampling over the points in view</td><td>min-max decimation over the points in view</td><td>WebGL</td></tr>
+            <tr><td>Spikes one sample wide</td><td><span class="y">✓</span> always drawn</td><td><span class="y">✓</span> drawn</td><td class="n">can be sampled away</td><td><span class="y">✓</span> kept</td><td><span class="y">✓</span> drawn</td></tr>
+            <tr><td>Live, 1M kept</td><td>0.41 ms a frame</td><td>0.43 ms</td><td>1073 ms</td><td>124 ms</td><td>1785 ms</td></tr>
+            <tr><td>O11y built in</td><td>units, thresholds, annotations, synced panels, follow window</td><td>sync; the rest by plugins</td><td>markLine / markArea, connect</td><td>by plugins</td><td>shapes, annotations</td></tr>
+            <tr><td>Accessibility</td><td>keyboard, screen-reader label, values at the cursor</td><td class="n">none built in</td><td>aria description</td><td class="n">none built in</td><td class="n">none built in</td></tr>
+            <tr><td>Chart types</td><td>time series</td><td>time series, bars</td><td>dozens</td><td>many</td><td>dozens</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Honest gaps: one chart type so far, one y axis, and with only a few thousand points on screen uPlot ties it. See the <a href="https://github.com/JetSquirrel/nsh-o11y#roadmap">roadmap</a>: histograms and heatmaps, bars and stacked areas, a trace waterfall.</p>
+    </div>
+  </section>
+
+  <div class="closing">
+    <div class="wrap">
+      <h2>Put a dashboard in your NSH app</h2>
+      <p class="sub" style="margin:0 auto 28px">Requires NSH 0.6 or later. <code>nsh add github:JetSquirrel/nsh-o11y</code> brings the TSX chart and its Rust backend; without Rust it runs on TypeScript alone.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/JetSquirrel/nsh-o11y#readme">Read the docs</a>
+        <a class="btn" href="https://github.com/JetSquirrel/nsh-o11y">Star on GitHub</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>nsh-o11y · Apache License 2.0</span>
+    <span>The demo on this page is the repo's own <code>example/</code> app, built with <code>nsh package --target web</code>.</span>
+  </div>
+</footer>
+
+<script>
+  // Copy-to-clipboard for the install snippet.
+  document.querySelectorAll("[data-copy]").forEach((b) => {
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; }
+      catch { b.textContent = "Copy failed"; }
+      setTimeout(() => (b.textContent = "Copy"), 1500);
+    });
+  });
+
+  // Full-view frame times (ms), from bench/web (headless Edge 158).
+  const FULL = {
+    "100k": [["nsh-o11y", 2.19], ["uPlot", 4.5], ["Chart.js", 7.46], ["ECharts", 10.3], ["Dygraphs", 43.5]],
+    "1M": [["nsh-o11y", 3.02], ["ECharts", 31.2], ["Chart.js", 32.5], ["uPlot", 34.2], ["Dygraphs", 359]],
+    "10M": [["nsh-o11y", 3.45], ["Chart.js", 171], ["ECharts", 180], ["uPlot", 226], ["Dygraphs", 7553]],
+  };
+  const fmt = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)} s` : v >= 10 ? `${v.toFixed(v >= 100 ? 0 : 1)} ms` : `${v.toFixed(1)} ms`);
+  function bars(n) {
+    const rows = FULL[n];
+    // Scale to the slowest of the canvas libraries other than an outlier more than 5× the next.
+    const sorted = rows.map((r) => r[1]).sort((a, b) => a - b);
+    let max = sorted[sorted.length - 1];
+    if (max > sorted[sorted.length - 2] * 5) max = sorted[sorted.length - 2] * 1.25;
+    const el = document.getElementById("bars");
+    el.setAttribute("aria-label", rows.map(([l, v]) => `${l} ${fmt(v)}`).join(", "));
+    el.innerHTML = rows
+      .map(([l, v]) => {
+        const me = l === "nsh-o11y";
+        const off = v > max;
+        const w = Math.min(100, (v / max) * 100);
+        return `<div class="bar-row"><span class="lbl${me ? " me" : ""}">${l}</span><div class="track"><div class="fill${me ? " me" : ""}${off ? " off" : ""}" style="width:${w.toFixed(1)}%"><span>${fmt(v)}${off ? " · off scale" : ""}</span></div></div></div>`;
+      })
+      .join("");
+    document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.n === n)));
+  }
+  document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => bars(b.dataset.n)));
+  bars("10M");
+
+  // A faint random walk behind the hero, drawn as M4 columns would draw it. Seeded: the same on every load.
+  (function () {
+    const svg = document.getElementById("hero-bg");
+    const W = 1400, H = 520;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid slice");
+    let seed = 11;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const ns = "http://www.w3.org/2000/svg";
+    const series = [
+      { color: "var(--c1)", base: 300, amp: 26, spikes: 3 },
+      { color: "var(--c2)", base: 380, amp: 16, spikes: 1 },
+      { color: "var(--c3)", base: 440, amp: 10, spikes: 0 },
+    ];
+    for (let x = 640; x < W; x += 80) {
+      const l = document.createElementNS(ns, "line");
+      l.setAttribute("x1", x); l.setAttribute("x2", x); l.setAttribute("y1", 40); l.setAttribute("y2", H - 20);
+      l.setAttribute("stroke", "var(--border)");
+      svg.appendChild(l);
+    }
+    for (const s of series) {
+      let y = s.base, d = "";
+      const spikeAt = new Set(Array.from({ length: s.spikes }, () => 700 + Math.floor(rnd() * 650)));
+      for (let x = 600; x <= W; x += 2) {
+        y += (rnd() - 0.5) * s.amp * 0.6 + (s.base - y) * 0.04;
+        const hi = y - rnd() * s.amp * 0.5, lo = y + rnd() * s.amp * 0.5;
+        const spike = [...spikeAt].some((p) => Math.abs(p - x) < 1) ? s.base - 200 - rnd() * 60 : hi;
+        d += `${d ? "L" : "M"}${x} ${y.toFixed(1)}V${spike.toFixed(1)}V${lo.toFixed(1)}V${y.toFixed(1)}`;
+      }
+      const p = document.createElementNS(ns, "path");
+      p.setAttribute("d", d); p.setAttribute("fill", "none");
+      p.setAttribute("stroke", s.color); p.setAttribute("stroke-width", "1.2"); p.setAttribute("opacity", ".7");
+      svg.appendChild(p);
+    }
+  })();
+</script>
 </body>
 </html>
