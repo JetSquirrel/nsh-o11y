@@ -1,7 +1,7 @@
 # nsh-o11y
 
 Observability charts for [Native Shell (NSH)](https://nsh.dev), written in TSX, with an optional Rust backend
-for large data. It starts with one component, `TimeSeriesChart`, built to beat [uPlot](https://github.com/leeoniya/uPlot)
+for large data. It starts with one component, `TimeSeriesChart`, built to beat [uPlot](https://github.com/leeoniya/uPlot), ECharts and Chart.js
 where native O11y dashboards need it: millions of points, zooming, live data, many panels. It draws on NSH's
 native `<Canvas>`, so it runs on every NSH platform, and ships as an nshm, laid out like
 [nsh-graph](../nsh-graph).
@@ -144,7 +144,7 @@ native/src/
   lod.rs              the pyramid and the tracer in Rust
 example/              a service dashboard (live panels + a big one), tests
 perf/                 the same dashboard with the Rust backend; TypeScript vs Rust benchmark
-bench/uplot/          uPlot on the same scenarios, in a headless browser
+bench/web/            uPlot, ECharts, Chart.js, Plotly, Dygraphs and nsh-o11y in a headless browser
 ```
 
 On QuickJS, which runs TSX on every NSH platform except the web, per-call costs dominate. So a series is one
@@ -154,22 +154,62 @@ found by galloping from where an even spread would put them, not by a full binar
 
 ## Performance
 
-See [bench/README.md](bench/README.md) for the method. Each figure is the JavaScript time of one frame on a
-1000 × 300 plot, with one series, measured on a 4-core Windows Server VM.
+Each figure is the JavaScript time of one frame on a 1000 × 300 plot with one series, mean / p95, on a
+4-core Windows Server VM. [bench/README.md](bench/README.md) has the method and each library's setup.
 
-**uPlot 1.6.31** in headless Edge (V8):
+### Against other libraries, in the same browser
 
-| Samples | Create + first draw | Full-view frame, mean / p95 | Zooming frame, mean / p95 |
+nsh-o11y's TypeScript engine on the browser's Canvas 2D, next to uPlot, ECharts, Chart.js, Plotly and
+Dygraphs, each set up as its docs recommend for big series, each run in a fresh headless Edge 158
+(`bench/web`).
+
+**Full-view frame**: the whole series on screen, recomputed (a pan, a resize, new data):
+
+| Library | 100k | 1M | 10M |
 |---|---|---|---|
-| 100,000 | 55 ms | 11.8 / 20.4 ms | 2.3 / 8.5 ms |
-| 1,000,000 | 119 ms | 97 / 106 ms | 13.5 / 63 ms |
-| 10,000,000 | 1002 ms | 960 / 1000 ms | 128 / 608 ms |
+| **nsh-o11y** 0.1.0 | **2.2 ms** | **3.0 ms** | **3.5 ms** |
+| uPlot 1.6.32 | 4.5 ms | 34 ms | 226 ms |
+| ECharts 6.1.0 (LTTB sampling) | 10.3 ms | 31 ms | 180 ms |
+| Chart.js 4.6.2 (min-max decimation) | 7.5 ms | 33 ms | 171 ms |
+| Plotly 4.3.0 (`scattergl`, WebGL)¹ | 18.7 ms | 18 ms | 14.5 ms |
+| Dygraphs 2.2.2 | 44 ms | 359 ms | 7553 ms |
 
-Live (1M kept, 3000 in view): 0.43 ms a frame. Dashboard (24 panels × 3 × 20k): 188 ms for all panels.
+**Zooming in** (a wheel, 1.25× a frame) and **creating the chart** (the first draw included):
 
-**nsh-o11y** in NSH 0.6's runtime (QuickJS), `nsh test perf`:
+| Library | Zoom, 1M | Zoom, 10M | Create, 1M | Create, 10M |
+|---|---|---|---|---|
+| **nsh-o11y** | **2.1 ms** | **2.4 ms** | **49 ms** | **246 ms** |
+| uPlot | 6.1 ms | 28.5 ms | 90 ms | 268 ms |
+| ECharts | 24 ms | 143 ms | 152 ms | 628 ms |
+| Chart.js | 57 ms | 27 ms | 93 ms | 335 ms |
+| Plotly¹ | 35 ms | 55 ms | 2351 ms | 14308 ms |
+| Dygraphs | 81 ms | 2862 ms | 1018 ms | 10396 ms |
 
-| Samples | Store | Load | Full-view frame, mean / p95 | Zooming frame, mean / p95 | Hover |
+**Live and dashboards**:
+
+| Library | Live: 1M kept, 3000 in view, 1 sample appended | Dashboard: 24 panels × 3 series × 20k | Hover, 1M |
+|---|---|---|---|
+| **nsh-o11y** | **0.41 / 0.60 ms** | **31 / 41 ms** | 0.08 ms |
+| uPlot | 0.43 / 0.60 ms | 75 / 95 ms | 0.07 ms |
+| ECharts | 1073 / 1458 ms | 152 / 192 ms | 3.6 ms |
+| Chart.js | 124 / 183 ms | 176 / 211 ms | 1.3 ms |
+| Plotly¹ | 1785 / 2544 ms | can't: ~16 WebGL contexts per page | not timed |
+| Dygraphs | 46 / 156 ms | 531 / 852 ms | 12.9 ms |
+
+nsh-o11y's frame barely grows with the data: at 10M samples it is 50–65× faster than uPlot, ECharts and
+Chart.js on a full view, and 12× faster than uPlot when zooming. The others either draw every point in
+view (uPlot, Dygraphs) or decimate by walking every point in view each frame (ECharts' LTTB, Chart.js's
+min-max); nsh-o11y reads each pixel column's min and max from its pyramid. ECharts', Chart.js's and
+Plotly's live frames are slow because they re-ingest the whole 1M-sample dataset on every update.
+
+¹ Plotly draws on the GPU: once its 14 s upload is done, a frame mostly moves a camera, and the GPU's work
+isn't in the JavaScript time. All of the full figures are in `bench/results/web.md` after a run.
+
+### In NSH
+
+In NSH's own runtime (QuickJS, interpreted), with the TypeScript store and the Rust one (`nsh test perf`):
+
+| Samples | Store | Load | Full-view frame | Zooming frame | Hover |
 |---|---|---|---|---|---|
 | 100,000 | TypeScript | 26 ms | 14.2 / 30.6 ms | 6.5 / 14.6 ms | 0.07 ms |
 | 100,000 | Rust | 6.6 ms | 1.8 / 3.1 ms | 0.84 / 1.7 ms | 0.30 ms |
@@ -178,17 +218,14 @@ Live (1M kept, 3000 in view): 0.43 ms a frame. Dashboard (24 panels × 3 × 20k)
 | 10,000,000 | TypeScript | out of memory (256 MB JS heap) | | | |
 | 10,000,000 | Rust | 1277 ms | 4.4 / 7.4 ms | 3.2 / 4.6 ms | 0.48 ms |
 
-| | TypeScript | Rust | uPlot |
-|---|---|---|---|
-| Live (1M kept, 3000 in view), a frame | 2.1 / 6.9 ms | 0.94 / 3.0 ms | 0.43 / 0.60 ms |
-| Dashboard (24 panels × 3 × 20k), all panels | 491 / 560 ms | 46 / 78 ms | 188 / 192 ms |
+| | TypeScript | Rust |
+|---|---|---|
+| Live (1M kept, 3000 in view) | 2.1 / 6.9 ms | 0.94 / 3.0 ms |
+| Dashboard (24 panels × 3 × 20k) | 491 / 560 ms | 46 / 78 ms |
 
-The same test checks that the Rust and TypeScript tracers draw identical paths.
-
-Against uPlot, a full view of 1M samples takes 2.6 ms instead of 97 (37×), and 10M takes 4.4 ms instead of
-960 (220×). Zooming into 10M takes 3.2 ms instead of 128 (40×). A 24-panel dashboard redraws 4× faster. Only
-tiny live views, where there is nothing to decimate, are still faster in uPlot under V8's JIT. The
-TypeScript store alone beats uPlot from about 1M samples on, but it tops out at about 2 million samples.
+QuickJS interprets what V8 compiles, so the TypeScript store is about 7× slower here than in a browser;
+the Rust store brings an NSH app back to browser speed or better (4.4 ms for a full view of 10M samples),
+and past the 256 MB JS heap. The same test checks that the Rust and TypeScript tracers draw identical paths.
 
 ## Develop
 
@@ -199,7 +236,7 @@ nsh check example               # type check
 nsh test example                # headless: store vs brute force, engine, scales, rendering, UI
 nsh test perf                   # TypeScript vs Rust, and their paths compared
 cargo test                      # the Rust crate on its own
-cd bench/uplot && bun install && bun run.ts   # uPlot on the same scenarios, headless Chrome/Edge
+cd bench/web && bun install && bun run.ts     # every library on the same scenarios, headless Chrome/Edge
 ```
 
 ## Roadmap

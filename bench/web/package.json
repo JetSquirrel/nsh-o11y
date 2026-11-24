@@ -1,8 +1,12 @@
 {
-  "name": "nsh-o11y-bench-uplot",
+  "name": "nsh-o11y-bench-web",
   "private": true,
-  "description": "uPlot, the baseline nsh-o11y measures itself against, run in a headless browser on the same data and scenarios as perf/perf.test.ts.",
+  "description": "Charting libraries on the same data and scenarios as perf/perf.test.ts, each in a fresh headless Chrome or Edge.",
   "dependencies": {
-    "uplot": "1.6.31"
+    "chart.js": "4.6.2",
+    "dygraphs": "2.2.2",
+    "echarts": "6.1.0",
+    "plotly.js-dist-min": "4.3.0",
+    "uplot": "1.6.32"
   }
 }
