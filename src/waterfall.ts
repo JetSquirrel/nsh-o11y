@@ -22,12 +22,14 @@ export interface WaterfallOptions {
   labelWidth: number;
   /** Mark the critical path. */
   criticalPath: boolean;
+  /** An overview of the whole trace above the time axis, the range in view marked on it. */
+  minimap: boolean;
 }
 
 export class WaterfallEngine {
   width = 0;
   height = 0;
-  options: WaterfallOptions = { rowHeight: 22, labelWidth: 280, criticalPath: true };
+  options: WaterfallOptions = { rowHeight: 22, labelWidth: 280, criticalPath: true, minimap: true };
   model: TraceModel | null = null;
   rows: WaterfallRow[] = [];
   /** The time in view, relative to the trace's start (ms). */
@@ -35,7 +37,19 @@ export class WaterfallEngine {
   v1 = 1;
   zoomed = false;
   scrollY = 0;
-  header = 26;
+  /** The time axis row's height. */
+  axis = 26;
+  /** The overview row's height (0 without one). */
+  get mini() {
+    return this.options.minimap ? 38 : 0;
+  }
+  /** What sits above the rows: the overview and the time axis. */
+  get header() {
+    return this.mini + this.axis;
+  }
+  /** A drag across the overview, in points. */
+  miniSelection: { from: number; to: number } | null = null;
+  private miniCache: { key: string; paths: [string, string][] } | null = null;
   selected = -1;
   hover = -1;
   pointer = { x: 0, y: 0 };
@@ -51,6 +65,7 @@ export class WaterfallEngine {
     this.services.clear();
     if (model) model.services.forEach((s, i) => this.services.set(s, palette[i % palette.length]));
     this.critical = model ? model.criticalPath() : new Set();
+    this.miniCache = null;
     if (!this.zoomed) this.reset();
   }
 
@@ -179,6 +194,65 @@ export class WaterfallEngine {
     const a = this.fromPx(Math.max(t.left, Math.min(s.from, s.to)));
     const b = this.fromPx(Math.min(t.left + t.width, Math.max(s.from, s.to)));
     return b > a ? [a, b] : null;
+  }
+
+  /** In the overview: x of a time (ms from the trace's start) over the whole trace, and back. */
+  miniPx(rel: number) {
+    const t = this.timeline;
+    return t.left + (rel / this.duration) * t.width;
+  }
+
+  miniTime(px: number) {
+    const t = this.timeline;
+    return Math.max(0, Math.min(this.duration, ((px - t.left) / t.width) * this.duration));
+  }
+
+  inMinimap(x: number, y: number) {
+    const t = this.timeline;
+    return this.mini > 0 && y < this.mini && x >= t.left - 4 && x <= t.left + t.width + 4;
+  }
+
+  /** The range a drag across the overview picked, or null for a tap. */
+  endMiniSelection(): [number, number] | null {
+    const s = this.miniSelection;
+    this.miniSelection = null;
+    if (!s || Math.abs(s.to - s.from) < 4) return null;
+    return [this.miniTime(Math.min(s.from, s.to)), this.miniTime(Math.max(s.from, s.to))];
+  }
+
+  /** Moves the range in view to center on the overview's x, keeping its width. */
+  centerAt(px: number) {
+    const span = this.v1 - this.v0;
+    const at = this.miniTime(px);
+    this.setView(at - span / 2, at + span / 2);
+  }
+
+  /**
+   * The overview's bars: every span (folded or not), one thin row each in tree order, squeezed into the
+   * overview's height; one path per service color, made again only when the trace or the width changes.
+   */
+  miniPaths(): [string, string][] {
+    const m = this.model;
+    const t = this.timeline;
+    const key = `${t.left}|${t.width}|${this.mini}`;
+    if (this.miniCache && this.miniCache.key === key) return this.miniCache.paths;
+    const paths = new Map<string, string>();
+    if (m && this.mini > 0) {
+      const all = m.rows();
+      const top = 5;
+      const h = this.mini - 10;
+      const rh = Math.max(0.5, Math.min(3, h / Math.max(1, all.length)));
+      all.forEach((row, i) => {
+        const s = row.span;
+        const x = this.miniPx(s.start - m.start);
+        const w = Math.max(0.75, (s.duration / this.duration) * t.width);
+        const y = top + (all.length > 1 ? (i / (all.length - 1)) * (h - rh) : 0);
+        const c = this.colorOf(row);
+        paths.set(c, (paths.get(c) ?? "") + `M${r1(x)} ${r1(y)}h${r1(w)}v${r1(rh)}h${r1(-w)}z`);
+      });
+    }
+    this.miniCache = { key, paths: [...paths] };
+    return this.miniCache.paths;
   }
 
   updateTicks() {
@@ -358,7 +432,7 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
   }
   cx.restore();
 
-  // Header: the time axis.
+  // Header: the overview, then the time axis.
   cx.fillStyle = theme.surface;
   cx.fillRect(0, 0, e.width, e.header);
   cx.strokeStyle = theme.grid;
@@ -366,11 +440,38 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
   cx.beginPath();
   cx.moveTo(0, e.header - 0.5);
   cx.lineTo(e.width, e.header - 0.5);
+  if (e.mini > 0) {
+    cx.moveTo(0, e.mini - 0.5);
+    cx.lineTo(e.width, e.mini - 0.5);
+  }
   cx.stroke();
+  const summary = m ? `${m.spans.length} spans · ${m.services.length} services · ${formatValue(m.duration, "ms")}` : "No trace";
+  if (e.mini > 0) {
+    for (const [color, d] of e.miniPaths()) {
+      cx.fillStyle = color;
+      cx.fill(path(d));
+    }
+    // Outside the range in view: veiled. The range itself: outlined.
+    if (e.zoomed) {
+      const a = e.miniPx(e.v0);
+      const b = e.miniPx(e.v1);
+      cx.globalAlpha = 0.7;
+      cx.fillStyle = theme.surface;
+      cx.fillRect(r1(tl.left), 1, r1(a - tl.left), e.mini - 2);
+      cx.fillRect(r1(b), 1, r1(tl.left + tl.width - b), e.mini - 2);
+      cx.globalAlpha = 1;
+      cx.strokeStyle = theme.selection;
+      cx.lineWidth = 1.5;
+      cx.beginPath();
+      cx.rect(r1(a), 2, r1(Math.max(2, b - a)), e.mini - 4);
+      cx.stroke();
+    }
+  }
   cx.fillStyle = theme.muted;
   cx.textBaseline = "middle";
   cx.textAlign = "left";
-  cx.fillText(m ? `${m.spans.length} spans · ${m.services.length} services · ${formatValue(m.duration, "ms")}` : "No trace", 6, r1(e.header / 2));
+  cx.fillText(fitText(cx, font, summary, e.labelWidth - 12), 6, r1(e.mini > 0 ? e.mini / 2 : e.header / 2));
+  if (e.mini > 0) cx.fillText(e.zoomed ? `${formatValue(e.v1 - e.v0, "ms")} in view` : "", 6, r1(e.mini + e.axis / 2));
   cx.textAlign = "center";
   let lastRight = tl.left - 4;
   for (const v of e.ticks) {
@@ -378,7 +479,7 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
     const w = measureCached(cx, font, label);
     const x = Math.max(tl.left + w / 2, Math.min(e.width - w / 2 - 2, e.toPx(v)));
     if (x - w / 2 < lastRight + 6) continue;
-    cx.fillText(label, r1(x), r1(e.header / 2));
+    cx.fillText(label, r1(x), r1(e.mini + e.axis / 2));
     lastRight = x + w / 2;
   }
 }
@@ -407,5 +508,14 @@ export function renderWaterfallOverlay(cx: Ctx2D, e: WaterfallEngine, theme: Cha
     cx.globalAlpha = 1;
   }
   cx.restore();
+  const ms = e.miniSelection;
+  if (ms) {
+    const a = Math.max(tl.left, Math.min(ms.from, ms.to));
+    const b = Math.min(tl.left + tl.width, Math.max(ms.from, ms.to));
+    cx.globalAlpha = 0.2;
+    cx.fillStyle = theme.selection;
+    cx.fillRect(r1(a), 1, r1(b - a), e.mini - 2);
+    cx.globalAlpha = 1;
+  }
   if (!s && e.hover >= 0 && e.pointer.x > e.labelWidth) drawTooltip(cx, theme, e.rowLines(e.hover), e.pointer.x, e.pointer.y, e.width, e.height);
 }

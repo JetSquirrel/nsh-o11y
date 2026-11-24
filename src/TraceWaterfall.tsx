@@ -38,6 +38,8 @@ export interface TraceWaterfallProps {
   rowHeight?: number;
   /** The name column's width in points. Default 280 (at most 45% of the view). */
   labelWidth?: number;
+  /** An overview of the whole trace above the time axis: drag across it to zoom, tap to move there. Default true. */
+  minimap?: boolean;
   /** Underline the critical path. Default true. */
   criticalPath?: boolean;
   /** Span ids folded at first. */
@@ -65,7 +67,7 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
   const overlayFrame = signal(0);
   const collapsed = signal<ReadonlySet<string>>(new Set(props.collapsed ?? []));
   const selectedId = signal<string | null>(null);
-  let gesture: { origin: number; originY: number; startX: number; startY: number; mode: "pending" | "select" | "pan" | "scroll"; last: number; lastY: number } | null = null;
+  let gesture: { origin: number; originY: number; startX: number; startY: number; mode: "pending" | "select" | "pan" | "scroll" | "mini"; last: number; lastY: number } | null = null;
   let lastTap = 0;
   // The plot canvas: a press gives it the keyboard, as Tab would.
   let plotRef: ViewRef | undefined;
@@ -102,7 +104,12 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
     });
   });
   effect(() => {
-    e.options = { rowHeight: props.rowHeight ?? 22, labelWidth: props.labelWidth ?? 280, criticalPath: props.criticalPath ?? true };
+    e.options = {
+      rowHeight: props.rowHeight ?? 22,
+      labelWidth: props.labelWidth ?? 280,
+      criticalPath: props.criticalPath ?? true,
+      minimap: props.minimap ?? true,
+    };
     untracked(redraw);
   });
   // Controlled selection.
@@ -160,11 +167,16 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
     const y = ev.pageY - g.originY;
     if (g.mode === "pending" && (Math.abs(x - g.startX) > 4 || Math.abs(y - g.startY) > 4)) {
       const touch = Date.now() - lastHover > 1500;
-      if (touch) g.mode = Math.abs(y - g.startY) > Math.abs(x - g.startX) ? "scroll" : "pan";
+      // On the overview, any drag (mouse or finger) brushes a range to zoom to.
+      if (e.inMinimap(g.startX, g.startY)) g.mode = "mini";
+      else if (touch) g.mode = Math.abs(y - g.startY) > Math.abs(x - g.startX) ? "scroll" : "pan";
       else if (!e.inTimeline(g.startX, g.startY)) g.mode = "scroll";
       else g.mode = ev.modifiers?.shift ? "pan" : "select";
     }
-    if (g.mode === "select") {
+    if (g.mode === "mini") {
+      e.miniSelection = { from: g.startX, to: x };
+      redrawOverlay();
+    } else if (g.mode === "select") {
       e.selection = { from: g.startX, to: x };
       redrawOverlay();
     } else if (g.mode === "pan") {
@@ -181,8 +193,8 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
     const g = gesture;
     gesture = null;
     if (!g) return;
-    if (g.mode === "select") {
-      const r = e.endSelection();
+    if (g.mode === "select" || g.mode === "mini") {
+      const r = g.mode === "mini" ? e.endMiniSelection() : e.endSelection();
       if (r) e.setView(r[0], r[1]);
       redraw();
       return;
@@ -191,7 +203,16 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
     const x = ev.pageX - g.origin;
     const y = ev.pageY - g.originY;
     const now = Date.now();
-    if (now - lastTap < DOUBLE_CLICK_MS && e.inTimeline(x, y)) {
+    const twice = now - lastTap < DOUBLE_CLICK_MS;
+    // A tap on the overview moves the range in view there; two zoom back out.
+    if (e.inMinimap(x, y)) {
+      lastTap = twice ? 0 : now;
+      if (twice) e.reset();
+      else if (e.zoomed) e.centerAt(x);
+      redraw();
+      return;
+    }
+    if (twice && e.inTimeline(x, y)) {
       lastTap = 0;
       e.reset();
       redraw();
@@ -207,6 +228,7 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
   const onTerminate = () => {
     gesture = null;
     e.selection = null;
+    e.miniSelection = null;
     redrawOverlay();
   };
 

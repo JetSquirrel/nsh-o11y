@@ -217,6 +217,48 @@ describe("traces", () => {
     expect(e.rowLines(2).length).toBeGreaterThan(2);
   });
 
+  test("the overview: brush a range, tap to move there, paths made once per width", () => {
+    const { spans } = checkoutTrace(8, 0, { error: true });
+    const m = new TraceModel(spans);
+    const e = new WaterfallEngine();
+    e.setSize(1000, 400);
+    e.setModel(m, PALETTE_LIGHT);
+    e.setRows(m.rows(new Set([m.roots[0].spanId]))); // folded: the overview still shows every span
+    expect(e.header).toBe(e.mini + e.axis);
+    const tl = e.timeline;
+    expect(e.inMinimap(tl.left + 10, 5)).toBe(true);
+    expect(e.inMinimap(tl.left + 10, e.mini + 5)).toBe(false);
+    expect(e.inMinimap(10, 5)).toBe(false); // the name column
+    // Brushing the overview's middle half zooms to the middle half of the trace.
+    e.miniSelection = { from: tl.left + tl.width * 0.25, to: tl.left + tl.width * 0.75 };
+    const r = e.endMiniSelection()!;
+    expect(Math.abs(r[0] - m.duration * 0.25)).toBeLessThan(1e-6);
+    expect(Math.abs(r[1] - m.duration * 0.75)).toBeLessThan(1e-6);
+    e.setView(r[0], r[1]);
+    expect(e.zoomed).toBe(true);
+    // A tap near the end moves the range there, as far as the trace goes.
+    e.centerAt(tl.left + tl.width);
+    expect(Math.abs(e.v1 - m.duration)).toBeLessThan(1e-6);
+    expect(Math.abs(e.v1 - e.v0 - m.duration * 0.5)).toBeLessThan(1e-6);
+    // A short drag is a tap.
+    e.miniSelection = { from: 300, to: 302 };
+    expect(e.endMiniSelection()).toBeNull();
+    const p = e.miniPaths();
+    expect(p.length).toBe(Math.min(m.services.length, PALETTE_LIGHT.length)); // one per color
+    expect(e.miniPaths()).toBe(p);
+    e.setSize(800, 400);
+    expect(e.miniPaths()).not.toBe(p);
+    const cx = ctx(800, 400);
+    e.measure = (t) => cx.measureText(t).width;
+    e.miniSelection = { from: 400, to: 500 };
+    renderWaterfall(cx, e, THEME, PATH);
+    renderWaterfallOverlay(cx, e, THEME);
+    // Without it, the header is the axis alone.
+    e.options = { ...e.options, minimap: false };
+    expect(e.header).toBe(e.axis);
+    expect(e.inMinimap(tl.left + 10, 5)).toBe(false);
+  });
+
   test("ten thousand spans draw only the rows in view", () => {
     const spans: Span[] = [{ spanId: "r", name: "root", service: "s0", start: 0, duration: 10_000 }];
     for (let i = 0; i < 10_000; i++) spans.push({ spanId: `s${i}`, parentId: "r", name: `op ${i}`, service: `s${i % 6}`, start: i, duration: 5 });
