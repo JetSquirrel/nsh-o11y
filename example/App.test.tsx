@@ -140,6 +140,22 @@ test("the sandwich view: the picked function between its callers and callees", a
   await app.waitFor("id:flame-plot");
 });
 
+test("compare a failed trace with a healthy one, then press a row to open it in the waterfall", async () => {
+  const app = await open("./App.tsx", { width: 1240, height: 860 });
+  await app.waitFor("id:tab-traces");
+  await app.press("id:tab-traces");
+  await app.waitFor("id:trace-compare");
+  await app.press("id:trace-compare");
+  await app.waitFor("id:comparison-plot");
+  expect(app.shows("id:waterfall-plot")).toBe(false);
+  // The opening trace failed: its payment retries are new calls.
+  expect(app.texts().some((t) => /^\d+ slower · \d+ faster · [1-9]\d* new · \d+ gone$/.test(t))).toBe(true);
+  expect(app.accessibility("id:comparison-plot")?.label ?? "").toContain("Most time added:");
+  await app.drag("id:comparison-plot", { x: 0, y: 0 }); // a tap on a row
+  await app.waitFor("id:waterfall-plot");
+  expect(app.texts()).not.toContain("Select a span to see its attributes");
+});
+
 test("the profiles tab: the flame graph and the top functions", async () => {
   const app = await open("./App.tsx", { width: 1240, height: 860, platform: "windows" });
   await app.waitFor("id:tab-profiles");

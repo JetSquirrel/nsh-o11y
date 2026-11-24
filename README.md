@@ -187,6 +187,20 @@ a trace of 10,000 spans draws under 100 labels. Props: `spans` (a `Span[]` or a 
 `labelWidth`, `criticalPath`, `collapsed`, `selected`, `onSelect`. `TraceModel` gives the rows, each span's
 self time and the critical path, headless.
 
+### `TraceComparison`
+
+```tsx
+<TraceComparison a={healthySpans} b={slowSpans} aLabel="healthy" bLabel="this trace" onSelect={(row) => open(row.b)} />
+```
+
+Two traces of one operation, call by call. Spans are matched by their place in the tree: the chain of service
+and name from the root, with repeats paired in order, so retries line up. Each row shows the baseline's bar
+in grey above the other trace's bar. That bar is red where the call got slower or is new, and blue where it
+got faster or is gone. The change is shown at the end of the row, and changes under 1 ms or 10% stay neutral.
+The summary counts slower, faster, new and gone calls, and the screen-reader label names the call that added
+the most time. `compareTraces(a, b)` works headless. In the example, "Compare with a healthy one" on a failed
+trace shows its payment retries as new calls and their time running up the tree.
+
 ### `FlameGraph`
 
 ```tsx
@@ -253,6 +267,8 @@ src/
   traces.ts           TraceModel: spans as a tree, waterfall rows, self time, the critical path
   waterfall.ts        the waterfall's engine and renderer
   TraceWaterfall.tsx  the waterfall component
+  tracediff.ts        compareTraces: two traces matched call by call; its engine and renderer
+  TraceComparison.tsx a slow or failed trace against a healthy one
   profile.ts          call trees from folded stacks, stacks or trees; top functions; search
   flame.ts            the flame graph's engine and renderer
   FlameGraph.tsx      the flame graph component
@@ -388,7 +404,6 @@ cd bench/web && bun install && bun run.ts     # every library on the same scenar
 ## Roadmap
 
 - More O11y panels on the same engine: bar and stacked area, exemplars on time series.
-- Traces: comparing two traces.
 - Logs in the Rust backend, for tens of millions of lines.
 - A second y axis.
 - Keep the newest frame's paths in Rust and hand the canvas a native path handle instead of SVG text.

@@ -5,6 +5,7 @@ import { LogStore, LOG_LEVELS, type LogEntry, type LogLevel } from "../src/logs"
 import { LogVolumeEngine, renderLogVolume, renderLogVolumeOverlay } from "../src/logvolume";
 import { TraceModel, type Span } from "../src/traces";
 import { WaterfallEngine, renderWaterfall, renderWaterfallOverlay } from "../src/waterfall";
+import { compareTraces, ComparisonEngine, renderComparison, renderComparisonOverlay } from "../src/tracediff";
 import { ancestry, diffProfiles, diffRatio, matchedValue, profileFromFolded, profileFromFoldedAsync, profileFromTree, sandwichProfile, topFunctions } from "../src/profile";
 import { FlameEngine, colorKey, diffColor, renderFlame, renderFlameOverlay } from "../src/flame";
 import { fitText } from "../src/draw";
@@ -698,6 +699,54 @@ describe("profiles", () => {
     expect(cx.measureText(t).width).toBeLessThanOrEqual(60);
     expect(fitText(cx, "11px system-ui", "short", 200)).toBe("short");
     expect(fitText(cx, "11px system-ui", "anything", 3)).toBe("");
+  });
+});
+
+describe("trace comparison", () => {
+  test("calls match by their place in the tree; retries pair in order; new and gone calls are kept", () => {
+    const sp = (spanId: string, parentId: string | undefined, name: string, start: number, duration: number, extra: Partial<Span> = {}): Span => ({ spanId, parentId, name, service: "s", start, duration, ...extra });
+    const a = new TraceModel([sp("r", undefined, "root", 0, 100), sp("q", "r", "query", 10, 20), sp("c1", "r", "call", 40, 10), sp("old", "r", "legacy", 60, 5)]);
+    const b = new TraceModel([sp("R", undefined, "root", 1000, 400), sp("Q", "R", "query", 1010, 21), sp("C1", "R", "call", 1040, 200, { status: "error" }), sp("C2", "R", "call", 1250, 100), sp("N", "R", "cache", 1360, 30)]);
+    const rows = compareTraces(a, b);
+    const by = (name: string, k = 0) => rows.filter((r) => r.name === name)[k];
+    expect(by("root").delta).toBe(300);
+    expect(by("call", 0).a!.spanId).toBe("c1");
+    expect(by("call", 0).b!.spanId).toBe("C1");
+    expect(by("call", 1).a).toBeUndefined(); // the retry is new
+    expect(by("legacy").b).toBeUndefined();
+    expect(by("cache").a).toBeUndefined();
+    expect(rows.every((r) => r.depth === (r.name === "root" ? 0 : 1))).toBe(true);
+    const e = new ComparisonEngine();
+    e.set(a, b);
+    expect(e.kind(by("query"))).toBe("same"); // +1 ms of 20: under 10%
+    expect(e.kind(by("root"))).toBe("slower");
+    expect(e.kind(by("legacy"))).toBe("gone");
+    expect(e.kind(by("cache"))).toBe("new");
+    expect(e.changeText(by("call", 0))).toBe("10 ms → 200 ms (+190 ms)");
+    expect(e.biggest(2).map((r) => r.name)).toEqual(["root", "call"]);
+    const i = e.rows.findIndex((r) => r.b?.spanId === "C1");
+    expect(e.rowLines(i).some((l) => l.text === "fails here, not in the baseline")).toBe(true);
+    // Both traces from their own start, on the longer one's scale.
+    expect(e.span).toBe(400);
+  });
+
+  test("the generated failed trace against a healthy one: the payment retries are where the time went", () => {
+    const ok = new TraceModel(checkoutTrace(21, 0).spans);
+    const bad = new TraceModel(checkoutTrace(22, 0, { error: true }).spans);
+    const e = new ComparisonEngine();
+    e.set(ok, bad);
+    const top = e.biggest(3).map((r) => r.name);
+    expect(top).toContain("PaymentService.Charge");
+    expect(e.rows.filter((r) => e.kind(r) === "new" && r.name === "POST /v1/charges").length).toBe(2);
+    e.setSize(900, 300);
+    const cx = ctx(900, 300);
+    e.measure = (t) => cx.measureText(t).width;
+    renderComparison(cx, e, THEME, PATH);
+    e.hover = 2;
+    e.pointer = { x: 500, y: 100 };
+    renderComparisonOverlay(cx, e, THEME);
+    e.scrollBy(1e6);
+    expect(e.rowAt(299)).toBe(e.rows.length - 1);
   });
 });
 

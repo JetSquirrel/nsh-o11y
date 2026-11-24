@@ -39,6 +39,8 @@ export {
 } from "./logs";
 export { LogVolumeEngine, renderLogVolume, renderLogVolumeOverlay } from "./logvolume";
 export { TraceWaterfall, type TraceWaterfallProps } from "./TraceWaterfall";
+export { TraceComparison, type TraceComparisonProps } from "./TraceComparison";
+export { compareTraces, ComparisonEngine, renderComparison, renderComparisonOverlay, type ComparisonRow } from "./tracediff";
 export { TraceModel, type Span, type SpanEvent, type WaterfallRow } from "./traces";
 export { WaterfallEngine, renderWaterfall, renderWaterfallOverlay, type WaterfallOptions } from "./waterfall";
 export { FlameGraph, type FlameGraphProps } from "./FlameGraph";
