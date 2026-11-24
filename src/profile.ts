@@ -129,24 +129,48 @@ function node(name: string, parent: ProfileNode | null): ProfileNode {
 }
 
 /** Builds the tree from stacks, root frame first. Identical frames under one parent are merged. */
+/**
+ * Finds or makes a node's child by name. Most nodes have a few children, found by scanning them (no Map
+ * to allocate); past `SCAN` children a Map is made for that node alone.
+ */
+const SCAN = 8;
+class TreeBuilder {
+  private maps = new Map<ProfileNode, Map<string, ProfileNode>>();
+
+  child(at: ProfileNode, name: string): ProfileNode {
+    const kids = at.children;
+    if (kids.length <= SCAN) {
+      for (let i = 0; i < kids.length; i++) if (kids[i].name === name) return kids[i];
+      const c = node(name, at);
+      kids.push(c);
+      if (kids.length > SCAN) {
+        const m = new Map<string, ProfileNode>();
+        for (const k of kids) m.set(k.name, k);
+        this.maps.set(at, m);
+      }
+      return c;
+    }
+    const m = this.maps.get(at)!;
+    let c = m.get(name);
+    if (!c) {
+      c = node(name, at);
+      kids.push(c);
+      m.set(name, c);
+    }
+    return c;
+  }
+}
+
 export function profileFromStacks(stacks: Iterable<{ frames: readonly string[]; value?: number }>, rootName = "all"): ProfileNode {
   const root = node(rootName, null);
-  const index = new Map<ProfileNode, Map<string, ProfileNode>>();
+  const tree = new TreeBuilder();
   for (const { frames, value = 1 } of stacks) {
     if (!(value > 0)) continue;
     root.value += value;
     let at = root;
     for (const f of frames) {
-      let m = index.get(at);
-      if (!m) index.set(at, (m = new Map()));
-      let c = m.get(f);
-      if (!c) {
-        c = node(f, at);
-        m.set(f, c);
-        at.children.push(c);
-      }
-      c.value += value;
-      at = c;
+      at = tree.child(at, f);
+      at.value += value;
     }
     at.self += value;
   }
@@ -154,18 +178,44 @@ export function profileFromStacks(stacks: Iterable<{ frames: readonly string[]; 
   return root;
 }
 
-/** Parses folded stacks: one `frame;frame;frame value` per line. */
+/**
+ * Parses folded stacks: one `frame;frame;frame value` per line. Each line is walked in place (no arrays of
+ * frames), straight into the tree.
+ */
 export function profileFromFolded(text: string, rootName = "all"): ProfileNode {
-  const stacks: { frames: string[]; value: number }[] = [];
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const sp = line.lastIndexOf(" ");
-    const value = sp > 0 ? Number(line.slice(sp + 1)) : NaN;
+  const root = node(rootName, null);
+  const tree = new TreeBuilder();
+  let pos = 0;
+  const n = text.length;
+  while (pos < n) {
+    let end = text.indexOf("\n", pos);
+    if (end < 0) end = n;
+    let a = pos;
+    let b = end;
+    pos = end + 1;
+    while (a < b && text.charCodeAt(a) <= 32) a++;
+    while (b > a && text.charCodeAt(b - 1) <= 32) b--;
+    if (a === b || text.charCodeAt(a) === 35 /* # */) continue;
+    const sp = text.lastIndexOf(" ", b - 1);
+    if (sp <= a) continue;
+    const value = Number(text.slice(sp + 1, b));
     if (!(value > 0)) continue;
-    stacks.push({ frames: line.slice(0, sp).split(";").filter((f) => f.length > 0), value });
+    root.value += value;
+    let at = root;
+    let f = a;
+    while (f < sp) {
+      let semi = text.indexOf(";", f);
+      if (semi < 0 || semi > sp) semi = sp;
+      if (semi > f) {
+        at = tree.child(at, text.slice(f, semi));
+        at.value += value;
+      }
+      f = semi + 1;
+    }
+    at.self += value;
   }
-  return profileFromStacks(stacks, rootName);
+  sortProfile(root, "value");
+  return root;
 }
 
 /** Builds the tree from nested `{ name, value?, children? }`. */

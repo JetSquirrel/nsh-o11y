@@ -106,8 +106,8 @@ export function Heatmap(props: HeatmapProps) {
     e.pointer = { x: ev.position.x, y: ev.position.y };
     e.hoverExemplar = e.exemplarAt(ev.position.x, ev.position.y);
     e.hover = e.hoverExemplar ? null : e.cellAt(ev.position.x, ev.position.y);
-    const s = e.store;
-    props.sync?._setCursor(e.hover && s ? s.column(e.hover.col).time + s.step / 2 : null, syncId);
+    const vc = e.hover ? e.cols[e.hover.col] : undefined;
+    props.sync?._setCursor(vc ? vc.time + vc.span / 2 : null, syncId);
     overlayFrame.update((n) => n + 1);
   };
   // A tap (a click, or a finger) on an exemplar opens it.

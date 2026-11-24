@@ -67,10 +67,18 @@ export class LogStore {
   /** Lower-cased search text per line, made when a text filter first needs it. */
   private search: (string | undefined)[] = [];
   private listeners = new Set<() => void>();
-  private cache: { key: string; version: number; result: number[] } | null = null;
+  /** Per level, how many lines of it come before each index: counts over a range are two lookups. */
+  private cum: Int32Array[] = [];
+  private cumLen = 0;
   readonly maxEntries: number;
   /** Bumped on every change. */
   version = 0;
+  /**
+   * Bumped when lines move: inserted out of order, dropped, replaced or cleared. While it holds, the
+   * lines so far keep their indices and new ones only go at the end, so what was computed over them
+   * still stands and only the new lines need looking at.
+   */
+  epoch = 0;
 
   constructor(options: LogStoreOptions = {}) {
     this.maxEntries = options.maxEntries ?? Infinity;
@@ -108,6 +116,7 @@ export class LogStore {
         const i = this.upper(e.time);
         this.entries.splice(i, 0, e);
         this.search.splice(i, 0, undefined);
+        this.moved();
       }
     }
     // Drop the oldest in batches (a tenth over the limit) so a live stream doesn't splice every line.
@@ -115,6 +124,7 @@ export class LogStore {
       const k = this.entries.length - this.maxEntries;
       this.entries.splice(0, k);
       this.search.splice(0, k);
+      this.moved();
     }
     this.changed();
   }
@@ -123,13 +133,43 @@ export class LogStore {
     this.entries = entries.slice().sort((a, b) => a.time - b.time);
     if (this.entries.length > this.maxEntries) this.entries.splice(0, this.entries.length - this.maxEntries);
     this.search = new Array(this.entries.length);
+    this.moved();
     this.changed();
   }
 
   clear() {
     this.entries = [];
     this.search = [];
+    this.moved();
     this.changed();
+  }
+
+  /** Lines moved: what was computed over them by index starts over. */
+  private moved() {
+    this.epoch++;
+    this.queries.clear();
+    this.cumLen = 0;
+  }
+
+  /** Brings the per-level running counts up to the last line. */
+  private counts(): Int32Array[] {
+    const n = this.entries.length;
+    if (this.cum.length === 0 || this.cum[0].length < n + 1) {
+      // Grow by doubling, keeping what is counted.
+      const cap = Math.max(1024, (n + 1) * 2);
+      this.cum = LOG_LEVELS.map((_, l) => {
+        const a = new Int32Array(cap);
+        if (this.cum[l]) a.set(this.cum[l].subarray(0, this.cumLen + 1));
+        return a;
+      });
+    }
+    const c = this.cum;
+    for (let i = this.cumLen; i < n; i++) {
+      const li = LEVEL_INDEX[levelOf(this.entries[i].level)];
+      for (let l = 0; l < 6; l++) c[l][i + 1] = c[l][i] + (l === li ? 1 : 0);
+    }
+    this.cumLen = n;
+    return c;
   }
 
   subscribe(fn: () => void): () => void {
@@ -139,7 +179,6 @@ export class LogStore {
 
   private changed() {
     this.version++;
-    this.cache = null;
     for (const fn of this.listeners) fn();
   }
 
@@ -197,26 +236,47 @@ export class LogStore {
     return m;
   }
 
-  /** The indices of the lines the filter lets through, oldest first. The last answer is cached. */
+  /**
+   * The indices of the lines the filter lets through, oldest first. The answers to the last few filters
+   * are kept; while only appends happen, a kept answer is extended by looking at the new lines alone.
+   * The array returned is never changed afterwards.
+   */
   query(f: LogFilter = {}): number[] {
     const key = `${f.levels ? f.levels.join(",") : "*"}|${f.text ?? ""}|${f.from ?? ""}|${f.to ?? ""}`;
-    if (this.cache && this.cache.key === key && this.cache.version === this.version) return this.cache.result;
     const [a, b] = this.bounds(f);
     const levels = LogStore.levelMask(f);
     const needle = (f.text ?? "").trim().toLowerCase();
+    const hit = this.queries.get(key);
+    let from = a;
+    let base: number[] | null = null;
+    if (hit && hit.epoch === this.epoch) {
+      if (hit.scanned >= this.entries.length) return hit.result;
+      from = Math.max(a, hit.scanned);
+      base = hit.result;
+    }
     const out: number[] = [];
-    if (!levels && !needle) for (let i = a; i < b; i++) out.push(i);
-    else for (let i = a; i < b; i++) if (this.passes(i, levels, needle)) out.push(i);
-    this.cache = { key, version: this.version, result: out };
-    return out;
+    if (!levels && !needle) for (let i = from; i < b; i++) out.push(i);
+    else for (let i = from; i < b; i++) if (this.passes(i, levels, needle)) out.push(i);
+    const result = base ? (out.length ? base.concat(out) : base) : out;
+    this.queries.delete(key);
+    this.queries.set(key, { epoch: this.epoch, scanned: this.entries.length, result });
+    // The view asks a few filters a frame (the list, the toggles' counts, the histogram): keep four.
+    if (this.queries.size > 4) this.queries.delete(this.queries.keys().next().value!);
+    return result;
   }
+
+  private queries = new Map<string, { epoch: number; scanned: number; result: number[] }>();
 
   /** How many lines of each level pass the filter's text and range (its levels ignored: the counts on the level toggles). */
   levelCounts(f: LogFilter = {}): Record<LogLevel, number> {
     const counts = [0, 0, 0, 0, 0, 0];
-    const [a, b] = this.bounds(f);
-    const needle = (f.text ?? "").trim().toLowerCase();
-    for (let i = a; i < b; i++) if (!needle || this.text(i).indexOf(needle) >= 0) counts[LEVEL_INDEX[levelOf(this.entries[i].level)]]++;
+    const needle = (f.text ?? "").trim();
+    if (!needle) {
+      // Two lookups per level in the running counts, whatever the number of lines.
+      const [a, b] = this.bounds(f);
+      const c = this.counts();
+      for (let l = 0; l < 6; l++) counts[l] = c[l][b] - c[l][a];
+    } else for (const i of this.query({ text: needle, from: f.from, to: f.to })) counts[LEVEL_INDEX[levelOf(this.entries[i].level)]]++;
     return { trace: counts[0], debug: counts[1], info: counts[2], warn: counts[3], error: counts[4], fatal: counts[5] };
   }
 
@@ -231,13 +291,32 @@ export class LogStore {
     for (const l of LOG_LEVELS) counts[l] = new Float64Array(buckets);
     const levels = LogStore.levelMask(f);
     const needle = (f.text ?? "").trim().toLowerCase();
-    const a = this.lower(start);
-    const b = this.upper(t1);
-    for (let i = a; i < b; i++) {
-      if (!this.passes(i, levels, needle)) continue;
-      const e = this.entries[i];
-      const k = Math.floor((e.time - start) / step);
-      if (k >= 0 && k < buckets) counts[levelOf(e.level)][k]++;
+    const end = this.upper(t1);
+    if (!needle) {
+      // Each bucket's counts are differences of the running counts at its edges: a binary search per
+      // edge, so a frame costs the same at a thousand lines as at a million.
+      const c = this.counts();
+      let lo = this.lower(start);
+      for (let k = 0; k < buckets; k++) {
+        const hi = Math.min(end, this.lower(start + (k + 1) * step));
+        for (let l = 0; l < 6; l++) if (!levels || levels[l]) counts[LOG_LEVELS[l]][k] = c[l][hi] - c[l][lo];
+        lo = hi;
+      }
+    } else {
+      // Searching: walk the matching lines in view (the match list is kept and extended).
+      const m = this.query({ levels: f.levels, text: f.text });
+      let i = 0;
+      let hi = m.length;
+      while (i < hi) {
+        const mid = (i + hi) >> 1;
+        if (this.entries[m[mid]].time < start) i = mid + 1;
+        else hi = mid;
+      }
+      for (; i < m.length && m[i] < end; i++) {
+        const e = this.entries[m[i]];
+        const k = Math.floor((e.time - start) / step);
+        if (k >= 0 && k < buckets) counts[levelOf(e.level)][k]++;
+      }
     }
     let max = 0;
     for (let k = 0; k < buckets; k++) {

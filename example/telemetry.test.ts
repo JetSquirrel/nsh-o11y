@@ -64,6 +64,49 @@ describe("logs", () => {
     expect(h.max).toBeGreaterThan(0);
   });
 
+  test("kept answers stay right through appends, an out-of-order line and drops", () => {
+    const all = randomLogs(6000, 9);
+    const s = new LogStore({ maxEntries: 4000 });
+    const brute = (f: { levels?: LogLevel[]; text?: string; from?: number; to?: number }) => {
+      const out: number[] = [];
+      for (let i = 0; i < s.length(); i++) {
+        const e = s.get(i);
+        if (f.levels && !f.levels.includes(e.level)) continue;
+        if (f.text && !`${e.message}\u0000${e.service}`.toLowerCase().includes(f.text)) continue;
+        if (f.from !== undefined && e.time < f.from) continue;
+        if (f.to !== undefined && e.time > f.to) continue;
+        out.push(i);
+      }
+      return out;
+    };
+    const check = () => {
+      const [t0, t1] = s.extent()!;
+      const mid = (t0 + t1) / 2;
+      for (const f of [{}, { levels: ["error", "warn"] as LogLevel[] }, { text: "payment" }, { text: "retry", from: mid }, { levels: ["info"] as LogLevel[], to: mid }]) {
+        expect(s.query(f)).toEqual(brute(f));
+        const c = s.levelCounts(f);
+        const want = brute({ ...f, levels: undefined });
+        for (const l of LOG_LEVELS) expect(c[l]).toBe(want.filter((i) => s.get(i).level === l).length);
+      }
+      // Histogram buckets add up to the brute-force count of the lines in range.
+      for (const f of [{}, { levels: ["error"] as LogLevel[] }, { text: "cache" }]) {
+        const h = s.histogram(t0, mid, 5000, f);
+        let sum = 0;
+        for (const l of LOG_LEVELS) for (const v of h.counts[l]) sum += v;
+        expect(sum).toBe(brute({ ...f, from: h.t0, to: mid }).length);
+      }
+    };
+    for (let i = 0; i < 6000; i += 700) {
+      s.append(all.slice(i, i + 700));
+      check();
+    }
+    // A late line goes in the middle: everything kept is recomputed.
+    const epoch = s.epoch;
+    s.append({ time: s.get(10).time, level: "fatal", message: "late payment line" });
+    expect(s.epoch).toBeGreaterThan(epoch);
+    check();
+  });
+
   test("out-of-order appends land in order, and the oldest are dropped", () => {
     const s = new LogStore({ maxEntries: 50 });
     for (let i = 0; i < 100; i++) s.append({ time: (i * 37) % 100, level: "info", message: String(i) });
@@ -357,6 +400,32 @@ describe("heatmap", () => {
         const pb = e.exemplarPoint(b);
         expect(Math.hypot(pa.x - pb.x, pa.y - pb.y)).toBeGreaterThanOrEqual(e.exemplarSpacing - 1e-9);
       }
+  });
+
+  test("narrow columns are summed into drawn ones of 2 points or more, aligned", () => {
+    const s = new HeatmapStore({ step: 1000, min: 5, max: 5000, buckets: 24 });
+    for (let t = 0; t < 3_600_000; t += 1000) s.add(t, [20, 40 + (t % 7000) / 100, 300]);
+    const e = new HeatmapEngine();
+    e.store = s;
+    e.setSize(1000, 200);
+    e.update(0, 3_600_000);
+    expect(e.merge).toBeGreaterThan(1);
+    expect(e.cols.length).toBeLessThanOrEqual(Math.ceil(e.plot.width / 2) + 2);
+    // Nothing is lost: the drawn columns hold every observation, and each sums its members.
+    expect(e.cols.reduce((a, c) => a + c.total, 0)).toBe(3600 * 3);
+    const c = e.cols[5];
+    let want = 0;
+    for (let i = c.first; i <= c.last; i++) want += s.column(i).counts[s.bucketOf(20)];
+    expect(c.counts[s.bucketOf(20)]).toBe(want);
+    expect(c.time % c.span).toBe(0); // aligned: panning keeps groups whole
+    // Hit-testing and the tooltip use the drawn column.
+    const hit = e.cellAt(e.toPx(c.time + c.span / 2), e.toPy(20))!;
+    expect(hit.col).toBe(5);
+    expect(e.cellLines(hit)[0].text).toContain(" + ");
+    // Zoomed in to 5 minutes, columns are drawn one by one again.
+    e.update(1_800_000, 2_100_000);
+    expect(e.merge).toBe(1);
+    renderHeatmap(ctx(1000, 200), e, THEME, PATH);
   });
 
   test("the oldest columns are dropped", () => {

@@ -26,24 +26,41 @@ export function fitText(cx: Pick<Ctx2D, "measureText">, font: string, text: stri
   return "";
 }
 
-/** Rectangles gathered by color, then filled with one path each. */
+/**
+ * Rectangles gathered by color, then filled with one path each. Coordinates are written as integers in
+ * tenths of a point and drawn under `scale(0.1)`, as the time series tracer does: on QuickJS, writing a
+ * decimal costs several times what an integer does, and a heatmap has thousands of cells.
+ */
 export class RectBatch {
-  private paths = new Map<string, string>();
+  private paths = new Map<string, string[]>();
+  private lastColor = "";
+  private last: string[] | null = null;
 
   add(color: string, x: number, y: number, w: number, h: number) {
     if (w <= 0 || h <= 0) return;
-    const d = `M${r1(x)} ${r1(y)}h${r1(w)}v${r1(h)}h${r1(-w)}z`;
-    this.paths.set(color, (this.paths.get(color) ?? "") + d);
+    let parts = color === this.lastColor ? this.last : this.paths.get(color);
+    if (!parts) this.paths.set(color, (parts = []));
+    this.lastColor = color;
+    this.last = parts;
+    const x0 = Math.round(x * 10);
+    const y0 = Math.round(y * 10);
+    const ww = Math.max(1, Math.round((x + w) * 10) - x0);
+    parts.push(`M${x0} ${y0}h${ww}v${Math.max(1, Math.round((y + h) * 10) - y0)}h-${ww}z`);
   }
 
   fill(cx: Ctx2D, path: PathFactory, alpha = 1) {
     if (alpha !== 1) cx.globalAlpha = alpha;
-    for (const [color, d] of this.paths) {
+    cx.save();
+    cx.scale(0.1, 0.1);
+    for (const [color, parts] of this.paths) {
       cx.fillStyle = color;
-      cx.fill(path(d));
+      cx.fill(path(parts.join("")));
     }
+    cx.restore();
     if (alpha !== 1) cx.globalAlpha = 1;
     this.paths.clear();
+    this.last = null;
+    this.lastColor = "";
   }
 }
 

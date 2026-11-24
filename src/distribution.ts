@@ -34,6 +34,18 @@ export interface Exemplar {
   attributes?: Record<string, string | number | boolean>;
 }
 
+/** A column as drawn: one of the store's, or several summed when they are too narrow to draw apart. */
+export interface HeatmapViewColumn {
+  time: number;
+  /** Its width in ms: the store's step times the columns summed. */
+  span: number;
+  counts: ArrayLike<number>;
+  total: number;
+  /** The store columns it holds: indices first to last. */
+  first: number;
+  last: number;
+}
+
 export interface HeatmapColumn {
   time: number;
   counts: Float64Array;
@@ -194,11 +206,16 @@ export class HeatmapStore {
   /** The q-quantile (0 to 1) of column i, interpolated inside its bucket in the store's scale; NaN when empty. */
   quantile(i: number, q: number): number {
     const c = this.cols[i];
-    if (!c || c.total <= 0) return NaN;
-    const want = q * c.total;
+    return c ? this.quantileOf(c.counts, c.total, q) : NaN;
+  }
+
+  /** The q-quantile of any counts laid out in this store's buckets (a column, or several summed). */
+  quantileOf(counts: ArrayLike<number>, total: number, q: number): number {
+    if (!(total > 0)) return NaN;
+    const want = q * total;
     let acc = 0;
     for (let b = 0; b < this.buckets; b++) {
-      const n = c.counts[b];
+      const n = counts[b];
       if (acc + n >= want && n > 0) {
         const f = (want - acc) / n;
         return this.valueAt((b + f) / this.buckets);
@@ -344,13 +361,59 @@ export class HeatmapEngine {
     if (!s) return;
     this.i0 = s.lower(this.x0 - s.step);
     this.i1 = s.lower(this.x1);
+    this.cols = this.viewColumns(s);
     let max = 0;
-    for (let i = this.i0; i < this.i1; i++) {
-      const c = s.column(i).counts;
+    for (const vc of this.cols) {
+      const c = vc.counts;
       for (let b = 0; b < c.length; b++) if (c[b] > max) max = c[b];
     }
     this.maxCount = max;
+    this.colorTable = null;
+    if (max <= 4096) {
+      const table: (string | null)[] = new Array(Math.floor(max) + 1);
+      for (let n = 0; n < table.length; n++) table[n] = this.colorFor(n);
+      this.colorTable = table;
+    }
     this.shown = this.thin(s);
+  }
+
+  /** What is drawn: the store's columns, or, where they are under 2 points wide, groups of them summed. */
+  cols: HeatmapViewColumn[] = [];
+  /** How many store columns each drawn one sums (1: none merged). */
+  merge = 1;
+
+  /**
+   * An hour of 1 s columns on a 1000-point plot is 3600 columns a third of a point wide: drawn one by one
+   * they cost 170,000 rectangles for what the screen shows as 500. Columns are summed in groups of k
+   * (aligned to multiples of k steps, so a group keeps its members while the view moves) to at least 2
+   * points each; the percentiles and the tooltip read the sums.
+   */
+  private viewColumns(s: HeatmapStore): HeatmapViewColumn[] {
+    const cw = (s.step / (this.x1 - this.x0)) * this.plot.width;
+    const k = (this.merge = cw >= 2 ? 1 : Math.ceil(2 / cw));
+    const out: HeatmapViewColumn[] = [];
+    if (k === 1) {
+      for (let i = this.i0; i < this.i1; i++) {
+        const c = s.column(i);
+        out.push({ time: c.time, span: s.step, counts: c.counts, total: c.total, first: i, last: i });
+      }
+      return out;
+    }
+    const span = s.step * k;
+    let cur: HeatmapViewColumn | null = null;
+    for (let i = this.i0; i < this.i1; i++) {
+      const c = s.column(i);
+      const t = Math.floor(c.time / span) * span;
+      if (!cur || cur.time !== t) {
+        cur = { time: t, span, counts: new Float64Array(s.buckets), total: 0, first: i, last: i };
+        out.push(cur);
+      }
+      const into = cur.counts as Float64Array;
+      for (let b = 0; b < s.buckets; b++) into[b] += c.counts[b];
+      cur.total += c.total;
+      cur.last = i;
+    }
+    return out;
   }
 
   /** Ticks at 1-2-5 values (log) or even steps (linear), about 28 points apart. */
@@ -399,13 +462,30 @@ export class HeatmapEngine {
     const s = this.store;
     if (!s || !this.inPlot(x, y)) return null;
     const t = this.fromPx(x);
-    const i = s.lower(Math.floor(t / s.step) * s.step);
-    if (i >= s.length() || s.column(i).time > t) return null;
+    // The drawn column holding t: binary search over the view's columns.
+    let lo = 0;
+    let hi = this.cols.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (this.cols[m].time + this.cols[m].span <= t) lo = m + 1;
+      else hi = m;
+    }
+    const vc = this.cols[lo];
+    if (!vc || vc.time > t) return null;
     const f = (this.plot.top + this.plot.height - y) / this.plot.height;
-    return { col: i, bucket: Math.max(0, Math.min(s.buckets - 1, Math.floor(f * s.buckets))) };
+    return { col: lo, bucket: Math.max(0, Math.min(s.buckets - 1, Math.floor(f * s.buckets))) };
   }
 
+  /** Colors by count, made once per update while counts are small integers: no logarithm per cell. */
+  private colorTable: (string | null)[] | null = null;
+
   colorOf(count: number) {
+    const t = this.colorTable;
+    if (t && count < t.length && count === (count | 0)) return t[count];
+    return this.colorFor(count);
+  }
+
+  private colorFor(count: number) {
     if (count <= 0 || this.maxCount <= 0) return null;
     const t = Math.log1p(count) / Math.log1p(this.maxCount);
     return this.ramp[Math.max(0, Math.min(this.ramp.length - 1, Math.round(t * (this.ramp.length - 1))))];
@@ -414,16 +494,18 @@ export class HeatmapEngine {
   cellLines(h: { col: number; bucket: number }): TooltipLine[] {
     const s = this.store;
     if (!s) return [];
-    const c = s.column(h.col);
+    const c = this.cols[h.col];
+    if (!c) return [];
     const n = c.counts[h.bucket];
     const lo = s.edges[h.bucket];
     const hi = s.edges[h.bucket + 1];
+    const when = c.span > s.step ? `${formatTimeFull(c.time, c.span, this.timeZone)} + ${formatValue(c.span, "ms")}` : formatTimeFull(c.time, s.step, this.timeZone);
     const lines: TooltipLine[] = [
-      { text: `${formatTimeFull(c.time, s.step, this.timeZone)} · ${c.total.toLocaleString()} observations`, muted: true },
+      { text: `${when} · ${c.total.toLocaleString()} observations`, muted: true },
       { text: `${formatValue(lo, this.unit)} – ${formatValue(hi, this.unit)}: ${n.toLocaleString()} (${c.total ? ((n / c.total) * 100).toFixed(1) : "0"}%)`, color: this.colorOf(n) ?? undefined },
     ];
     this.percentiles.forEach((q, k) => {
-      const v = s.quantile(h.col, q);
+      const v = s.quantileOf(c.counts, c.total, q);
       lines.push({ text: `p${+(q * 100).toFixed(1)} ${formatValue(v, this.unit)}`, color: PERCENTILE_COLORS[k % PERCENTILE_COLORS.length] });
     });
     return lines;
@@ -446,19 +528,42 @@ export function renderHeatmap(cx: Ctx2D, e: HeatmapEngine, theme: ChartTheme, pa
   cx.clip();
   if (s) {
     const cells = new RectBatch();
-    const cw = (s.step / (e.x1 - e.x0)) * plot.width;
     const ch = plot.height / s.buckets;
-    for (let i = e.i0; i < e.i1; i++) {
-      const c = s.column(i);
+    for (const c of e.cols) {
       const x = e.toPx(c.time);
-      for (let b = 0; b < s.buckets; b++) {
-        const color = e.colorOf(c.counts[b]);
-        if (!color) continue;
-        cells.add(color, x, bottom - (b + 1) * ch, Math.max(0.6, cw + 0.25), ch + 0.25);
+      const w = Math.max(0.6, (c.span / (e.x1 - e.x0)) * plot.width + 0.25);
+      // Neighboring buckets of one shade (there are 16) go in one rectangle: a column is a few runs.
+      let run: string | null = null;
+      let from = 0;
+      for (let b = 0; b <= s.buckets; b++) {
+        const color = b < s.buckets ? e.colorOf(c.counts[b]) : null;
+        if (color === run) continue;
+        if (run) cells.add(run, x, bottom - b * ch, w, (b - from) * ch + 0.25);
+        run = color;
+        from = b;
       }
     }
     cells.fill(cx, path);
-    // Exemplars: small diamonds on the surface color, ringed in the text color (errors in red).
+    // Percentile lines across the columns' middles; gaps where a column is empty.
+    e.percentiles.forEach((q, k) => {
+      let d = "";
+      let pen = false;
+      for (const c of e.cols) {
+        const v = s.quantileOf(c.counts, c.total, q);
+        if (v !== v) {
+          pen = false;
+          continue;
+        }
+        d += `${pen ? "L" : "M"}${r1(e.toPx(c.time + c.span / 2))} ${r1(e.toPy(v))}`;
+        pen = true;
+      }
+      if (!d) return;
+      cx.strokeStyle = PERCENTILE_COLORS[k % PERCENTILE_COLORS.length];
+      cx.lineWidth = 1.5;
+      cx.lineJoin = "round";
+      cx.stroke(path(d));
+    });
+    // Exemplars over the lines: small diamonds on the surface color, ringed in the text color (errors in red).
     if (e.showExemplars) {
       let ok = "";
       let bad = "";
@@ -478,26 +583,6 @@ export function renderHeatmap(cx: Ctx2D, e: HeatmapEngine, theme: ChartTheme, pa
         cx.stroke(p);
       }
     }
-    // Percentile lines across the columns' middles; gaps where a column is empty.
-    e.percentiles.forEach((q, k) => {
-      let d = "";
-      let pen = false;
-      for (let i = e.i0; i < e.i1; i++) {
-        const v = s.quantile(i, q);
-        if (v !== v) {
-          pen = false;
-          continue;
-        }
-        const x = e.toPx(s.column(i).time + s.step / 2);
-        d += `${pen ? "L" : "M"}${r1(x)} ${r1(e.toPy(v))}`;
-        pen = true;
-      }
-      if (!d) return;
-      cx.strokeStyle = PERCENTILE_COLORS[k % PERCENTILE_COLORS.length];
-      cx.lineWidth = 1.5;
-      cx.lineJoin = "round";
-      cx.stroke(path(d));
-    });
   }
   cx.restore();
   cx.font = font;
@@ -550,9 +635,9 @@ export function renderHeatmapOverlay(cx: Ctx2D, e: HeatmapEngine, theme: ChartTh
   }
   const h = e.hover;
   if (h) {
-    const c = s.column(h.col);
+    const c = e.cols[h.col];
     const x = e.toPx(c.time);
-    const cw = Math.max(2, (s.step / (e.x1 - e.x0)) * plot.width);
+    const cw = Math.max(2, (c.span / (e.x1 - e.x0)) * plot.width);
     const ch = plot.height / s.buckets;
     cx.strokeStyle = theme.text;
     cx.lineWidth = 1.5;

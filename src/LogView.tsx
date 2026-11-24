@@ -104,13 +104,21 @@ export function LogView(props: LogViewProps) {
     return { levels: all ? undefined : levelList(), text: text(), from: r?.[0], to: r?.[1] };
   };
 
+  // The last rows made, kept so that lines streaming in only add rows instead of making them all again.
+  let made: { store: LogStore; key: string; epoch: number; n: number; rows: LogEntry[] } | null = null;
   const rows = computed<LogEntry[]>(() => {
     version();
     const st = store();
-    const idx = st.query(filter());
-    const out = new Array<LogEntry>(idx.length);
+    const f = filter();
     const newest = (props.order ?? "newest") === "newest";
-    for (let i = 0; i < idx.length; i++) out[newest ? idx.length - 1 - i : i] = st.get(idx[i]);
+    const key = `${newest}|${f.levels?.join(",") ?? "*"}|${f.text}|${f.from ?? ""}|${f.to ?? ""}`;
+    const idx = st.query(f);
+    const from = made && made.store === st && made.key === key && made.epoch === st.epoch && idx.length >= made.n ? made.n : 0;
+    const add = new Array<LogEntry>(idx.length - from);
+    for (let i = from; i < idx.length; i++) add[newest ? idx.length - 1 - i : i - from] = st.get(idx[i]);
+    // Joining arrays is native: cheap next to building one entry by entry.
+    const out = from === 0 ? add : newest ? add.concat(made!.rows) : made!.rows.concat(add);
+    made = { store: st, key, epoch: st.epoch, n: idx.length, rows: out };
     return out;
   });
 

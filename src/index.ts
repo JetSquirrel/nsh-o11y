@@ -52,6 +52,7 @@ export {
   heatRamp,
   type HeatmapOptions,
   type HeatmapColumn,
+  type HeatmapViewColumn,
   type Exemplar,
 } from "./distribution";
 export {

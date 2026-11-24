@@ -127,6 +127,16 @@ export class TraceModel {
 
   /** The rows of the waterfall, depth-first, skipping what is under a collapsed span. */
   rows(collapsed: ReadonlySet<string> = new Set()): WaterfallRow[] {
+    // Nothing folded (the waterfall at first, and its overview always): made once.
+    if (collapsed.size === 0 && this.allRows) return this.allRows;
+    const out = this.walk(collapsed);
+    if (collapsed.size === 0) this.allRows = out;
+    return out;
+  }
+
+  private allRows: WaterfallRow[] | null = null;
+
+  private walk(collapsed: ReadonlySet<string>): WaterfallRow[] {
     const out: WaterfallRow[] = [];
     const stack: { s: Span; d: number }[] = [];
     for (let i = this.roots.length - 1; i >= 0; i--) stack.push({ s: this.roots[i], d: 0 });

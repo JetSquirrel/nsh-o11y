@@ -346,6 +346,29 @@ QuickJS interprets what V8 compiles, so the TypeScript store is about 7× slower
 the Rust store brings an NSH app back to browser speed or better (4.4 ms for a full view of 10M samples),
 and past the 256 MB JS heap. The same test checks that the Rust and TypeScript tracers draw identical paths.
 
+### Logs, traces, profiles and heatmaps in NSH
+
+In QuickJS (`nsh test perf/telemetry.test.ts`), mean / p95 per frame, or once where one figure is given:
+
+| | Size | Time |
+|---|---|---|
+| Log view, live: 6 lines arrive, list + counts + histogram | 50,000 lines | 13 / 15 ms |
+| | 200,000 lines | 52 / 55 ms |
+| Log volume histogram frame | 200,000 lines | 4.3 / 4.8 ms |
+| Log text search: first (lower-cases every line) / then | 200,000 lines | 593 ms / 13 ms |
+| Trace: model + rows | 10,000 spans | 110 ms |
+| Waterfall: scroll frame | 50,000 spans | 2.6 / 3.0 ms |
+| Flame graph frame (layout + draw) | 20,000 stacks | 21 / 23 ms |
+| `profileFromFolded` | 20,000 stacks | 1200 ms |
+| Heatmap frame, 48 buckets | 5 min of 1 s columns | 28 / 30 ms |
+| | 1 h of 1 s columns | 79 / 84 ms |
+
+Live log frames don't rescan the lines. Running per-level counts make level counts and histogram buckets two
+lookups each, kept query answers only look at new lines, and the list joins the new rows to the old ones
+natively. Lines that move (a late line, or the oldest dropped) start these over. The heatmap sums columns
+narrower than 2 points: an hour on a 1000-point plot draws 500 columns, not 3,600. Every batch of rectangles is
+written in integer tenths of a point, as the time series tracer is.
+
 ## Develop
 
 ```sh
@@ -354,6 +377,7 @@ nsh run perf                    # the dashboard, Rust store (builds the crate), 
 nsh check example               # type check
 nsh test example                # headless: store vs brute force, engine, scales, rendering, UI
 nsh test perf                   # TypeScript vs Rust, and their paths compared
+nsh test perf/telemetry.test.ts # logs, traces, profiles and heatmaps in QuickJS
 cargo test                      # the Rust crate on its own
 cd bench/web && bun install && bun run.ts     # every library on the same scenarios, headless Chrome/Edge
 ```
