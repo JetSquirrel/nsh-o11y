@@ -6,10 +6,15 @@
 import { drawTooltip, fitText, r1, RectBatch, type TooltipLine } from "./draw";
 import { fontOf, measureCached, type Ctx2D, type PathFactory } from "./render";
 import { formatValue, valueTicks } from "./scale";
-import type { TraceModel, WaterfallRow } from "./traces";
+import type { SpanEvent, TraceModel, WaterfallRow } from "./traces";
 import type { ChartTheme } from "./types";
 
 export const ERROR_COLOR = "#e34948";
+
+/** An exception or error event (OpenTelemetry names them "exception"): drawn red. */
+export function isErrorEvent(ev: SpanEvent) {
+  return /exception|error|fail/i.test(ev.name);
+}
 
 export interface WaterfallOptions {
   rowHeight: number;
@@ -200,6 +205,9 @@ export class WaterfallEngine {
       { text: `starts at +${formatValue(s.start - this.model.start, "ms")}`, muted: true },
     ];
     if (s.status === "error") lines.push({ text: "error", color: ERROR_COLOR });
+    const evs = s.events ?? [];
+    for (const ev of evs.slice(0, 4)) lines.push({ text: `◆ ${ev.name} at +${formatValue(ev.time - this.model.start, "ms")}`, color: isErrorEvent(ev) ? ERROR_COLOR : undefined, muted: !isErrorEvent(ev) });
+    if (evs.length > 4) lines.push({ text: `+${evs.length - 4} more events`, muted: true });
     return lines;
   }
 }
@@ -250,6 +258,8 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
     let errors = "";
     let crit = "";
     let toggles = "";
+    let marks = "";
+    let errMarks = "";
     const bh = Math.max(4, Math.round(rh * 0.5));
     for (let i = first; i <= last; i++) {
       const row = e.rows[i];
@@ -264,6 +274,17 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
         bars.add(e.colorOf(row), l, by, Math.max(1, rr - l), bh);
         if (s.status === "error") errors += `M${r1(l) + 0.5} ${r1(by) + 0.5}h${r1(Math.max(1, rr - l) - 1)}v${bh - 1}h${r1(-(Math.max(1, rr - l) - 1))}z`;
         if (e.options.criticalPath && e.critical.has(s.spanId)) crit += `M${r1(l)} ${r1(by + bh + 2)}H${r1(rr)}`;
+      }
+      // Span events: a diamond on the bar at each one's time, red for exceptions.
+      if (s.events) {
+        const cy = y + rh / 2;
+        for (const ev of s.events) {
+          const x = e.toPx(ev.time - m.start);
+          if (x < tl.left - 4 || x > tl.left + tl.width + 4) continue;
+          const d = `M${r1(x)} ${r1(cy - 4)}L${r1(x + 4)} ${r1(cy)}L${r1(x)} ${r1(cy + 4)}L${r1(x - 4)} ${r1(cy)}Z`;
+          if (isErrorEvent(ev)) errMarks += d;
+          else marks += d;
+        }
       }
       // A triangle toggle: pointing down when open, right when collapsed.
       if (row.children) {
@@ -288,6 +309,15 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
     if (toggles) {
       cx.fillStyle = theme.muted;
       cx.fill(path(toggles));
+    }
+    for (const [d, color] of [[marks, theme.text], [errMarks, ERROR_COLOR]] as const) {
+      if (!d) continue;
+      const p = path(d);
+      cx.fillStyle = theme.surface;
+      cx.fill(p);
+      cx.strokeStyle = color;
+      cx.lineWidth = 1.5;
+      cx.stroke(p);
     }
 
     // Names: service dot, name, with the service muted after it; the duration by the bar.

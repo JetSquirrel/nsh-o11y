@@ -153,7 +153,8 @@ const spans: Span[] = [
 ```
 
 Each span gets a row: its name indented under its parent, and a bar colored by service. Error spans are
-outlined in red and the critical path is underlined. Press a row to select it, or its triangle to fold its
+outlined in red, the critical path is underlined, and span events are diamonds on the bars (red for exceptions;
+the tooltip lists them). A controlled `selected` scrolls its row into view. Press a row to select it, or its triangle to fold its
 children. Drag across the timeline to zoom, Ctrl/⌘ + scroll to zoom, scroll through the rows, Shift + scroll to
 pan, double-click to zoom out. ↑/↓ select, ←/→ fold, 0 zooms out. Only the rows in view are drawn: in the test,
 a trace of 10,000 spans draws under 100 labels. Props: `spans` (a `Span[]` or a `TraceModel`), `rowHeight`,
@@ -324,7 +325,7 @@ cd bench/web && bun install && bun run.ts     # every library on the same scenar
 
 - More O11y panels on the same engine: histograms / heatmaps (latency distributions), bar and stacked area,
   exemplars on time series linking to traces.
-- Traces: a span-duration minimap, span events as marks on the bars, and comparing two traces.
+- Traces: a span-duration minimap, and comparing two traces.
 - Profiles: diff flame graphs (before / after), and a sandwich view (a function's callers and callees).
 - Logs in the Rust backend, for tens of millions of lines.
 - A second y axis.

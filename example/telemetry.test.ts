@@ -153,6 +153,36 @@ describe("traces", () => {
     }
   });
 
+  test("span events: exceptions on failed calls, drawn as marks, listed in the tooltip", () => {
+    const { spans } = checkoutTrace(5, 1000, { error: true });
+    const failed = spans.filter((s) => s.status === "error" && s.name === "POST /v1/charges");
+    expect(failed.length).toBe(2);
+    for (const s of failed) {
+      expect(s.events![0].name).toBe("exception");
+      expect(s.events![0].time).toBeGreaterThanOrEqual(s.start);
+      expect(s.events![0].time).toBeLessThanOrEqual(s.start + s.duration);
+    }
+    const m = new TraceModel(spans);
+    const e = new WaterfallEngine();
+    e.setSize(900, 800);
+    e.setModel(m, PALETTE_LIGHT);
+    e.setRows(m.rows());
+    const i = e.rows.findIndex((r) => r.span === failed[0]);
+    const lines = e.rowLines(i);
+    expect(lines.some((l) => l.text.startsWith("◆ exception at +") && l.color === "#e34948")).toBe(true);
+    const pay = e.rows.findIndex((r) => r.span.name === "PaymentService.Charge");
+    expect(e.rowLines(pay).some((l) => l.text.startsWith("◆ retry 1"))).toBe(true);
+    // One path for the plain marks and one for the exceptions, whatever their number.
+    const cx = ctx(900, 800);
+    e.measure = (t) => cx.measureText(t).width;
+    const diamonds: string[] = [];
+    renderWaterfall(cx, e, THEME, (d) => {
+      if (/^M[\d.]+ [\d.]+L/.test(d) && d.split("Z").length - 1 >= 1 && !d.includes("h")) diamonds.push(d);
+      return new Path2D(d);
+    });
+    expect(diamonds.some((d) => d.split("Z").length - 1 === 2)).toBe(true); // the two exceptions
+  });
+
   test("the waterfall zooms, scrolls, hit-tests and draws", () => {
     const { spans } = checkoutTrace(6, 0);
     const m = new TraceModel(spans);

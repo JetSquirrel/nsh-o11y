@@ -76,6 +76,21 @@ test("the traces tab: pick a trace, select a span", async () => {
   await app.hover("id:waterfall-plot");
 });
 
+test("errors only: a failed trace opens on its failing span, with the exception event", async () => {
+  const app = await open("./App.tsx", { width: 1240, height: 860 });
+  await app.waitFor("id:tab-traces");
+  await app.press("id:tab-traces");
+  await app.waitFor("id:errors-only");
+  await app.press("id:errors-only");
+  await app.waitFor("id:trace-0");
+  await app.press("id:trace-0");
+  await app.wait(100);
+  // The deepest failed span is selected: a charge call that got a 503, its exception listed.
+  expect(app.texts().some((t) => t.includes("POST /v1/charges · payment"))).toBe(true);
+  expect(app.texts().some((t) => t.includes(" · error · span "))).toBe(true);
+  expect(app.texts().some((t) => t.startsWith("◆ exception"))).toBe(true);
+});
+
 test("the profiles tab: the flame graph and the top functions", async () => {
   const app = await open("./App.tsx", { width: 1240, height: 860, platform: "windows" });
   await app.waitFor("id:tab-profiles");

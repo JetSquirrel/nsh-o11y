@@ -6,7 +6,9 @@
 export interface SpanEvent {
   /** Milliseconds, on the spans' clock. */
   time: number;
+  /** "exception" (OpenTelemetry's name for one) and names with "error" or "fail" in them are drawn red. */
   name: string;
+  attributes?: Record<string, string | number | boolean>;
 }
 
 export interface Span {

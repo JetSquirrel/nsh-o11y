@@ -131,16 +131,32 @@ function App() {
 
   // ---- Traces: the newest ones the logs link to, one open in the waterfall.
   const tab = signal<Tab>("metrics");
-  const traceList = signal(logSource.recent(40));
-  const firstError = traceList().find((tr) => tr.spans.some((s) => s.status === "error")) ?? traceList()[0];
-  const traceId = signal<string | null>(firstError?.traceId ?? null);
+  const errorsOnly = signal(false);
+  const isError = (tr: { spans: Span[] }) => tr.spans.some((s) => s.status === "error");
+  /** The newest 40 traces, or the newest 40 that failed. */
+  const recentTraces = () => (errorsOnly() ? logSource.recent(500).filter(isError).slice(0, 40) : logSource.recent(40));
+  const traceList = signal(recentTraces());
+  const refreshTraces = () => traceList.set(recentTraces());
+  const traceId = signal<string | null>(null);
   const span = signal<Span | null>(null);
-  const openTrace = (id: string) => {
-    traceList.set(logSource.recent(40));
+  /** Opens a trace with its deepest failed span selected (scrolled to), as a trace view jumps to the failure. */
+  const showTrace = (id: string) => {
+    const spans = logSource.trace(id) ?? [];
+    const m = new TraceModel(spans);
+    let worst: Span | null = null;
+    for (const s of spans) if (s.status === "error" && (!worst || m.depth(s) > m.depth(worst))) worst = s;
     traceId.set(id);
-    span.set(null);
+    span.set(worst);
+  };
+  const openTrace = (id: string) => {
+    refreshTraces();
+    showTrace(id);
     tab.set("traces");
   };
+  {
+    const first = logSource.recent(500).find(isError) ?? traceList()[0];
+    if (first) showTrace(first.traceId);
+  }
   const trace = computed(() => {
     const id = traceId();
     const spans = id ? logSource.trace(id) : undefined;
@@ -196,9 +212,25 @@ function App() {
   const tracesPage = () => (
     <View style={{ flex: 1, flexDirection: "row", gap: 14 }}>
       <View class="rounded-xl border border-border bg-card py-2" style={{ width: 300 }}>
-        <Text class="text-sm font-medium text-foreground" style={{ paddingHorizontal: 12, paddingBottom: 6 }}>
-          Recent traces
-        </Text>
+        <View class="flex-row items-center" style={{ paddingHorizontal: 12, paddingBottom: 6, gap: 8 }}>
+          <Text class="text-sm font-medium text-foreground" style={{ flex: 1 }}>
+            Recent traces
+          </Text>
+          <View
+            role="checkbox"
+            testID="errors-only"
+            accessibilityState={{ checked: errorsOnly() }}
+            onPress={() => {
+              errorsOnly.update((v) => !v);
+              refreshTraces();
+            }}
+            class={`rounded-md border px-2 py-0.5 ${errorsOnly() ? "border-destructive" : "border-border hover:bg-accent"}`}
+            style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+          >
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#e34948" }} />
+            <Text class="text-xs text-foreground">Errors only</Text>
+          </View>
+        </View>
         <List each={traceList()} keyExtractor={(tr) => tr.traceId} style={{ flex: 1 }} testID="trace-list">
           {(tr, i) => {
             const root = () => tr().spans.find((s) => !s.parentId) ?? tr().spans[0];
@@ -208,10 +240,7 @@ function App() {
                 role="button"
                 testID={`trace-${i()}`}
                 accessibilityState={{ selected: traceId() === tr().traceId }}
-                onPress={() => {
-                  traceId.set(tr().traceId);
-                  span.set(null);
-                }}
+                onPress={() => showTrace(tr().traceId)}
                 class={`px-3 py-1.5 ${traceId() === tr().traceId ? "bg-accent" : "hover:bg-accent"}`}
                 style={{ gap: 1 }}
               >
@@ -238,7 +267,7 @@ function App() {
             {traceId() ? `Trace ${traceId()!.slice(0, 16)}…` : "Trace"}
           </Text>
           {trace() ? (
-            <TraceWaterfall testID="waterfall" spans={trace()!} onSelect={(s) => span.set(s)} style={{ flex: 1 }} />
+            <TraceWaterfall testID="waterfall" spans={trace()!} selected={span()?.spanId ?? null} onSelect={(s) => span.set(s)} style={{ flex: 1 }} />
           ) : (
             <Text class="text-sm text-muted-foreground">No trace selected</Text>
           )}
@@ -258,6 +287,18 @@ function App() {
                     </Text>
                     <Text class="font-mono text-xs text-foreground" style={{ flex: 1 }}>
                       {String(kv()[1])}
+                    </Text>
+                  </View>
+                )}
+              </Each>
+              <Each of={span()!.events ?? []}>
+                {(ev) => (
+                  <View style={{ flexDirection: "row", gap: 8 }} testID="span-event">
+                    <Text class={`font-mono text-xs ${/exception|error|fail/i.test(ev().name) ? "text-destructive" : "text-muted-foreground"}`} style={{ width: 160 }}>
+                      {`◆ ${ev().name} +${formatValue(ev().time - span()!.start, "ms")}`}
+                    </Text>
+                    <Text class="font-mono text-xs text-foreground" style={{ flex: 1, numberOfLines: 1 }}>
+                      {Object.entries(ev().attributes ?? {}).map(([k, v]) => `${k}=${v}`).join("  ")}
                     </Text>
                   </View>
                 )}
@@ -334,7 +375,7 @@ function App() {
                 testID={`tab-${item().id}`}
                 accessibilityState={{ selected: tab() === item().id }}
                 onPress={() => {
-                  if (item().id === "traces") traceList.set(logSource.recent(40));
+                  if (item().id === "traces") refreshTraces();
                   tab.set(item().id);
                 }}
                 class={`rounded-md px-3 py-1 ${tab() === item().id ? "bg-background" : "hover:bg-accent"}`}

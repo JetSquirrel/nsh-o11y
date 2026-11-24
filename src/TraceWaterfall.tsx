@@ -87,6 +87,7 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
     untracked(() => {
       e.zoomed = false;
       e.setModel(m, palette);
+      e.scrollY = 0;
       redraw();
     });
   });
@@ -96,6 +97,7 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
       e.setRows(r);
       const id = selectedId();
       e.selected = id ? r.findIndex((row) => row.span.spanId === id) : -1;
+      if (e.selected >= 0) e.reveal(e.selected);
       redraw();
     });
   });
@@ -281,7 +283,12 @@ export function TraceWaterfall(props: TraceWaterfallProps) {
     const font = fontOf(t);
     cx.font = font;
     e.measure = (s) => measureCached(cx, font, s);
-    if (e.width !== width || e.height !== height) e.setSize(width, height);
+    if (e.width !== width || e.height !== height) {
+      const first = e.height === 0;
+      e.setSize(width, height);
+      // A selection made before the size was known scrolls into view now.
+      if (first && e.selected >= 0) e.reveal(e.selected);
+    }
   };
 
   cleanup(() => {

@@ -44,6 +44,7 @@ export function checkoutTrace(seed: number, start: number, options: { error?: bo
   const cart = add(co, "CartService.GetCart", "cart", t, 0, { kind: "client" });
   const cartGet = add(cart, "redis HGETALL cart", "cart", t + jitter(0.5), jitter(2.5), { kind: "client", attributes: { "db.system": "redis" } });
   cart.duration = cartGet.start + cartGet.duration - cart.start + jitter(1);
+  if (r() < 0.3) cartGet.events = [{ time: cartGet.start + cartGet.duration * 0.6, name: "cache miss", attributes: { key: "cart:" + hexId(r, 6) } }];
   const items = 2 + Math.floor(r() * 4);
   const inv = add(co, "InventoryService.Reserve", "inventory", t + jitter(0.4), 0, { kind: "client", attributes: { "items.count": items } });
   let it = inv.start + jitter(0.5);
@@ -65,6 +66,7 @@ export function checkoutTrace(seed: number, start: number, options: { error?: bo
   const pay = add(co, "PaymentService.Charge", "payment", t, 0, { kind: "client", attributes: { "payment.provider": "cards", "payment.currency": "EUR" } });
   let pt = pay.start + jitter(1);
   const attempts = options.error ? 3 : 1;
+  let prevEnd = pt;
   for (let a = 0; a < attempts; a++) {
     const failed = !!options.error && a < attempts - 1;
     const call = add(pay, "POST /v1/charges", "payment", pt, jitter(failed ? 250 : 45) * slow, {
@@ -72,6 +74,16 @@ export function checkoutTrace(seed: number, start: number, options: { error?: bo
       status: failed ? "error" : "ok",
       attributes: { "http.status_code": failed ? 503 : 200, "retry.attempt": a },
     });
+    if (failed)
+      call.events = [
+        {
+          time: call.start + call.duration - 0.2,
+          name: "exception",
+          attributes: { "exception.type": "UpstreamUnavailable", "exception.message": "503 from cards-api" },
+        },
+      ];
+    if (a > 0) (pay.events ??= []).push({ time: call.start, name: `retry ${a}`, attributes: { "retry.backoff_ms": Math.round(call.start - prevEnd) } });
+    prevEnd = call.start + call.duration;
     pt = call.start + call.duration + (failed ? jitter(40) : jitter(0.5));
   }
   pay.duration = pt - pay.start + jitter(1);
