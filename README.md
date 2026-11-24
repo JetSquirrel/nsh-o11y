@@ -6,7 +6,7 @@ where native O11y dashboards need it: millions of points, zooming, live data, ma
 native `<Canvas>`, so it runs on every NSH platform, and ships as an nshm, laid out like
 [nsh-graph](../nsh-graph).
 
-**[Live demo](https://jetsquirrel.github.io/nsh-o11y/)**: the example dashboard, built with `nsh package --target web`
+**[Site and live demo](https://jetsquirrel.github.io/nsh-o11y/)**: the example dashboard, built with `nsh package --target web`
 (TypeScript store; drag to zoom, wheel to zoom, double-click to reset).
 
 - **Level of detail**: each series keeps a min/max pyramid (blocks of 8, 64, 512… samples). A frame is M4
