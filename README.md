@@ -376,6 +376,7 @@ nsh run example                 # the dashboard, TypeScript store
 nsh run perf                    # the dashboard, Rust store (builds the crate), up to 50M samples
 nsh check example               # type check
 nsh test example                # headless: store vs brute force, engine, scales, rendering, UI
+nsh test example/screenshot.test.tsx example/dark.test.tsx --target windows   # pictures, light and dark, in bench/results
 nsh test perf                   # TypeScript vs Rust, and their paths compared
 nsh test perf/telemetry.test.ts # logs, traces, profiles and heatmaps in QuickJS
 cargo test                      # the Rust crate on its own

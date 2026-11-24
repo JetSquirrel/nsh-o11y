@@ -1,4 +1,4 @@
-import { List, computed, mount, signal, Text, View, windowSize, type JSX } from "nsh";
+import { List, colorScheme, computed, mount, setColorScheme, signal, Text, View, windowSize, type JSX } from "nsh";
 import {
   FlameGraph,
   Heatmap,
@@ -452,6 +452,11 @@ function App() {
           </Each>
         </View>
         <View style={{ flex: 1 }} />
+        <Button
+          label={colorScheme() === "dark" ? "Light" : "Dark"}
+          onPress={() => setColorScheme(colorScheme() === "dark" ? "light" : "dark")}
+          testID="scheme"
+        />
         <Button label={live() ? "Pause" : "Resume"} onPress={() => live.update((v) => !v)} testID="live" />
         {tab() === "metrics" ? <Button label="Reset zoom" onPress={() => sync.reset()} testID="reset" /> : null}
       </View>

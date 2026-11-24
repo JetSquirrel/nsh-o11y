@@ -432,9 +432,12 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
   }
   cx.restore();
 
-  // Header: the overview, then the time axis.
-  cx.fillStyle = theme.surface;
-  cx.fillRect(0, 0, e.width, e.header);
+  // Header: the overview, then the time axis. Unfilled: the rows are clipped below it, so it shows whatever
+  // the waterfall sits on (a card is often not the page's background).
+  if (theme.background) {
+    cx.fillStyle = theme.background;
+    cx.fillRect(0, 0, e.width, e.header);
+  }
   cx.strokeStyle = theme.grid;
   cx.lineWidth = 1;
   cx.beginPath();
@@ -447,19 +450,28 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
   cx.stroke();
   const summary = m ? `${m.spans.length} spans · ${m.services.length} services · ${formatValue(m.duration, "ms")}` : "No trace";
   if (e.mini > 0) {
-    for (const [color, d] of e.miniPaths()) {
-      cx.fillStyle = color;
-      cx.fill(path(d));
-    }
-    // Outside the range in view: veiled. The range itself: outlined.
-    if (e.zoomed) {
+    // Zoomed: every bar faded, then the range in view drawn again at full strength and outlined. No veil
+    // of a background color, which would have to match whatever the waterfall sits on.
+    const paths = e.miniPaths().map(([color, d]) => [color, path(d)] as const);
+    const draw = () => {
+      for (const [color, p] of paths) {
+        cx.fillStyle = color;
+        cx.fill(p);
+      }
+    };
+    if (!e.zoomed) draw();
+    else {
       const a = e.miniPx(e.v0);
       const b = e.miniPx(e.v1);
-      cx.globalAlpha = 0.7;
-      cx.fillStyle = theme.surface;
-      cx.fillRect(r1(tl.left), 1, r1(a - tl.left), e.mini - 2);
-      cx.fillRect(r1(b), 1, r1(tl.left + tl.width - b), e.mini - 2);
+      cx.globalAlpha = 0.3;
+      draw();
       cx.globalAlpha = 1;
+      cx.save();
+      cx.beginPath();
+      cx.rect(r1(a), 0, r1(Math.max(1, b - a)), e.mini);
+      cx.clip();
+      draw();
+      cx.restore();
       cx.strokeStyle = theme.selection;
       cx.lineWidth = 1.5;
       cx.beginPath();
