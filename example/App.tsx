@@ -517,10 +517,11 @@ function App() {
             data={traffic}
             series={[
               { label: "requests", fill: 0.06, width: 1.25 },
-              { label: "errors", color: "#e34948", fill: 0.15, width: 1.25 },
+              { label: "errors", color: "#e34948", fill: 0.15, width: 1.25, axis: "right" },
             ]}
             unit="reqps"
             softMin={0}
+            y2={{ softMin: 0 }}
             window={300_000}
             annotations={annotations()}
             sync={sync}

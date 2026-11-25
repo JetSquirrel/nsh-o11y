@@ -27,7 +27,8 @@ draws on NSH's native `<Canvas>`, so it runs on every NSH platform, and ships as
   `+`/`-` zoom, Backspace goes back a zoom, `0` resets.
 - **For O11y**: units (`short`, `bytes`, `ms`, `percent`, `reqps`…), time axes on calendar-friendly
   steps in local time or UTC, thresholds (SLOs), annotations (deploys, incidents), gaps for missing data,
-  steps, fills, a legend with values at the cursor that toggles series, and a shared crosshair and zoom
+  steps, fills, a second y axis with its own unit and scale, a legend with values at the cursor that toggles
+  series, and a shared crosshair and zoom
   across panels (`createChartSync`).
 - **Accessible**: the chart reads as its title, the time and every value under the cursor; keyboard
   navigation; the series palette is the color-blind-checked one from nsh-graph.
@@ -72,13 +73,14 @@ decrease. `NaN` is a missing value.
 | Prop | Default | |
 |---|---|---|
 | `data` | (required) | A store from `createTimeSeries`, or `{ x, ys }`. |
-| `series` | (required) | One `SeriesOptions` per y column: `label`, `color`, `width` (1.5), `fill` (opacity, or `true`), `dash`, `step`, `spanGaps`, `show`, `unit`. |
+| `series` | (required) | One `SeriesOptions` per y column: `label`, `color`, `width` (1.5), `fill` (opacity, or `true`), `dash`, `step`, `spanGaps`, `show`, `unit`, `axis` (`"left"`, or `"right"` for the second axis). |
 | `title` | | |
 | `unit` | `"short"` | `"none"`, `"short"`, `"percent"`, `"percentunit"`, `"bytes"`, `"decbytes"`, `"bits"`, `"ms"`, `"s"`, `"ns"`, `"reqps"`, `"ops"`, or a function. |
 | `yMin` / `yMax` | auto | Fixed ends of the y range. |
 | `softMin` / `softMax` | | Kept inside the auto range: `softMin={0}` for rates. |
+| `y2` | | The second y axis, on the right, for the series with `axis: "right"`: `{ unit?, min?, max?, softMin?, softMax? }`, as `unit`, `yMin`, `yMax`, `softMin` and `softMax` are for the left one. It shows when a series is on it. |
 | `window` | all data | Live: the last `window` ms, following new samples. |
-| `thresholds` | | `{ value, color?, label?, dash? }[]` |
+| `thresholds` | | `{ value, color?, label?, dash?, axis? }[]` |
 | `annotations` | | `{ time, end?, label?, color? }[]`: moments, or spans with `end`. |
 | `timeZone` | `"local"` | or `"utc"`. |
 | `legend` | `true` | Values at the cursor (or the newest); a press toggles the series. |
@@ -408,7 +410,6 @@ cd bench/web && bun install && bun run.ts     # every library on the same scenar
 
 - More O11y panels on the same engine: bar and stacked area, exemplars on time series.
 - Logs in the Rust backend, for tens of millions of lines.
-- A second y axis.
 - Keep the newest frame's paths in Rust and hand the canvas a native path handle instead of SVG text.
 
 ## License

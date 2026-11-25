@@ -161,8 +161,12 @@ export function renderPlot(cx: Ctx2D, engine: ChartEngine, theme: ChartTheme, pa
     cx.lineCap = "butt";
     for (const s of engine.series) {
       if (!s.show || s.index >= st.seriesCount) continue;
+      // Each series is traced on its own axis's scale.
+      const [y0, y1] = engine.yRange(s.axis);
+      base.y0 = y0;
+      base.y1 = y1;
       if (s.fill > 0) {
-        const zero = engine.y0 <= 0 && engine.y1 >= 0 ? engine.toPy(0) : bottom;
+        const zero = y0 <= 0 && y1 >= 0 ? engine.toPy(0, s.axis) : bottom;
         const d = st.trace(s.index, { ...base, baseline: zero, spanGaps: s.spanGaps, step: s.step });
         if (d) {
           cx.globalAlpha = s.fill;
@@ -192,8 +196,10 @@ export function renderPlot(cx: Ctx2D, engine: ChartEngine, theme: ChartTheme, pa
 
   // Thresholds over the data.
   for (const t of o.thresholds) {
-    if (t.value < engine.y0 || t.value > engine.y1) continue;
-    const y = crisp(engine.toPy(t.value));
+    const axis = t.axis ?? "left";
+    const [y0, y1] = engine.yRange(axis);
+    if (t.value < y0 || t.value > y1) continue;
+    const y = crisp(engine.toPy(t.value, axis));
     cx.strokeStyle = t.color ?? theme.muted;
     cx.lineWidth = 1;
     cx.setLineDash(t.dash ?? [4, 4]);
@@ -214,6 +220,15 @@ export function renderPlot(cx: Ctx2D, engine: ChartEngine, theme: ChartTheme, pa
     const y = engine.toPy(v);
     if (y < plot.top - 1 || y > bottom + 1) continue;
     cx.fillText(engine.formatY(v), plot.left - 6, r(y));
+  }
+  // The right axis: labels only, its own ticks; the grid follows the left one.
+  if (engine.hasY2) {
+    cx.textAlign = "left";
+    for (const v of engine.y2Ticks) {
+      const y = engine.toPy(v, "right");
+      if (y < plot.top - 1 || y > bottom + 1) continue;
+      cx.fillText(engine.formatY2(v), right + 6, r(y));
+    }
   }
   cx.textAlign = "center";
   cx.textBaseline = "top";
@@ -240,10 +255,12 @@ export function renderPlot(cx: Ctx2D, engine: ChartEngine, theme: ChartTheme, pa
   cx.textBaseline = "top";
   cx.textAlign = "left";
   for (const t of o.thresholds) {
-    if (!t.label || t.value < engine.y0 || t.value > engine.y1) continue;
+    const axis = t.axis ?? "left";
+    const [y0, y1] = engine.yRange(axis);
+    if (!t.label || t.value < y0 || t.value > y1) continue;
     const w = measureCached(cx, font, t.label);
     const x = right - 4 - w;
-    const y = engine.toPy(t.value) - fs - 3;
+    const y = engine.toPy(t.value, axis) - fs - 3;
     backing(x, y, w);
     cx.fillStyle = t.color ?? theme.muted;
     cx.fillText(t.label, r(x), r(y));
@@ -296,8 +313,9 @@ export function renderOverlay(cx: Ctx2D, engine: ChartEngine, theme: ChartTheme)
   for (const s of engine.series) {
     if (!s.show || s.index >= st.seriesCount) continue;
     const v = st.y(s.index, i);
-    if (v !== v || v < engine.y0 || v > engine.y1) continue;
-    const y = engine.toPy(v);
+    const [y0, y1] = engine.yRange(s.axis);
+    if (v !== v || v < y0 || v > y1) continue;
+    const y = engine.toPy(v, s.axis);
     cx.beginPath();
     cx.arc(r(x), r(y), 4, 0, Math.PI * 2);
     cx.fillStyle = theme.surface;

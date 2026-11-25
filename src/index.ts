@@ -16,6 +16,8 @@ export { renderPlot, renderOverlay, renderStats, type Ctx2D, type PathFactory } 
 export { formatValue, formatTime, formatTimeFull, timeStep, timeTicks, valueTicks, niceRange, niceStep, type Tick } from "./scale";
 export { PALETTE_LIGHT, PALETTE_DARK, withAlpha } from "./palette";
 export type {
+  AxisOptions,
+  AxisSide,
   SeriesOptions,
   Threshold,
   Annotation,
