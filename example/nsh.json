@@ -3,7 +3,7 @@
   "id": "dev.nsho11y.example",
   "version": "0.1.0",
   "build": 1,
-  "nsh": ">=0.6",
+  "nsh": ">=0.7",
   "window": { "title": "nsh-o11y", "defaultSize": { "width": 1240, "height": 860 } },
   "resolve": {
     "alias": { "nsh-o11y": "../src/index.ts" }
