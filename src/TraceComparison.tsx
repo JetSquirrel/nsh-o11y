@@ -26,6 +26,8 @@ export interface TraceComparisonProps {
   colors?: ChartColors;
   fontFamily?: string;
   fontSize?: number;
+  /** Start with only the calls that changed (and the calls above them) shown. A button in the legend switches it. Default false. */
+  changedOnly?: boolean;
   /** A row was pressed. */
   onSelect?: (row: ComparisonRow) => void;
   style?: ViewStyle;
@@ -43,6 +45,8 @@ export function TraceComparison(props: TraceComparisonProps) {
   const model = (s: readonly Span[] | TraceModel) => (s instanceof TraceModel ? s : new TraceModel(s as Span[]));
   const summary = signal<{ slower: number; faster: number; added: number; gone: number; top: ComparisonRow | undefined }>({ slower: 0, faster: 0, added: 0, gone: 0, top: undefined });
   let drag: { originY: number; lastY: number; startY: number; moved: boolean } | null = null;
+  const changedOnly = signal(untracked(() => props.changedOnly ?? false));
+  const hidden = signal(0);
 
   effect(() => {
     const a = props.a;
@@ -50,7 +54,7 @@ export function TraceComparison(props: TraceComparisonProps) {
     untracked(() => {
       e.set(model(a), model(b));
       const n = { slower: 0, faster: 0, added: 0, gone: 0, top: e.biggest(1)[0] };
-      for (const r of e.rows) {
+      for (const r of e.all) {
         const k = e.kind(r);
         if (k === "slower") n.slower++;
         else if (k === "faster") n.faster++;
@@ -58,7 +62,17 @@ export function TraceComparison(props: TraceComparisonProps) {
         else if (k === "gone") n.gone++;
       }
       summary.set(n);
+      hidden.set(e.hidden);
       plotFrame.update((v) => v + 1);
+    });
+  });
+  effect(() => {
+    const on = changedOnly();
+    untracked(() => {
+      e.changedOnly = on;
+      hidden.set(e.hidden);
+      plotFrame.update((v) => v + 1);
+      overlayFrame.update((v) => v + 1);
     });
   });
   effect(() => {
@@ -124,6 +138,17 @@ export function TraceComparison(props: TraceComparisonProps) {
           <Text class="text-xs text-muted-foreground">{`${props.bLabel ?? "this trace"}: slower or new / faster or gone`}</Text>
         </View>
         <View style={{ flex: 1 }} />
+        <View
+          role="button"
+          accessibilityState={{ checked: changedOnly() }}
+          testID={props.testID ? `${props.testID}-changed-only` : undefined}
+          onPress={() => changedOnly.update((v) => !v)}
+          class={`rounded px-2 py-0.5 ${changedOnly() ? "bg-accent" : "hover:bg-accent"}`}
+        >
+          <Text class={`text-xs ${changedOnly() ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+            {changedOnly() && hidden() > 0 ? `Changed calls only · ${hidden()} hidden` : "Changed calls only"}
+          </Text>
+        </View>
         <Text class="text-xs text-muted-foreground" testID={props.testID ? `${props.testID}-summary` : undefined}>
           {`${summary().slower} slower · ${summary().faster} faster · ${summary().added} new · ${summary().gone} gone`}
         </Text>

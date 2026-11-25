@@ -71,7 +71,11 @@ export class ComparisonEngine {
   rowHeight = 30;
   header = 26;
   labelWidth = 300;
+  /** Every matched call, depth-first. */
+  all: ComparisonRow[] = [];
+  /** The rows shown: all of them, or with `changedOnly` the changed ones and the calls above them. */
   rows: ComparisonRow[] = [];
+  private changed = false;
   a: TraceModel | null = null;
   b: TraceModel | null = null;
   /** The longer trace's duration: both are drawn on one scale, from their own starts. */
@@ -87,10 +91,50 @@ export class ComparisonEngine {
   set(a: TraceModel, b: TraceModel) {
     this.a = a;
     this.b = b;
-    this.rows = compareTraces(a, b);
+    this.all = compareTraces(a, b);
     this.span = Math.max(1e-6, a.duration, b.duration);
     this.scrollY = 0;
     this.hover = -1;
+    this.filter();
+  }
+
+  get changedOnly() {
+    return this.changed;
+  }
+
+  /** Hides the calls that stayed the same, unless something changed below them. */
+  set changedOnly(on: boolean) {
+    if (on === this.changed) return;
+    this.changed = on;
+    this.hover = -1;
+    this.filter();
+    this.clampScroll();
+  }
+
+  /** How many rows `changedOnly` hides. */
+  get hidden() {
+    return this.all.length - this.rows.length;
+  }
+
+  private filter() {
+    if (!this.changed) {
+      this.rows = this.all;
+      return;
+    }
+    // Backwards through the depth-first rows: a row's descendants come right after it, so by the time
+    // it is reached, need[depth + 1] says whether any of them is kept.
+    const keep = new Uint8Array(this.all.length);
+    const need: boolean[] = [];
+    for (let i = this.all.length - 1; i >= 0; i--) {
+      const r = this.all[i];
+      const k = this.kind(r) !== "same" || need[r.depth + 1] === true;
+      need[r.depth + 1] = false;
+      if (k) {
+        keep[i] = 1;
+        need[r.depth] = true;
+      }
+    }
+    this.rows = this.all.filter((_, i) => keep[i]);
   }
 
   setSize(width: number, height: number) {
@@ -165,7 +209,7 @@ export class ComparisonEngine {
 
   /** The rows that changed most, slowest first: where to look. */
   biggest(n = 5): ComparisonRow[] {
-    return this.rows
+    return this.all
       .filter((r) => this.kind(r) === "slower" || this.kind(r) === "new")
       .sort((x, y) => (y.b?.duration ?? 0) - (y.a?.duration ?? 0) - ((x.b?.duration ?? 0) - (x.a?.duration ?? 0)))
       .slice(0, n);

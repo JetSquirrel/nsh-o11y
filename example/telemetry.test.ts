@@ -748,6 +748,37 @@ describe("trace comparison", () => {
     e.scrollBy(1e6);
     expect(e.rowAt(299)).toBe(e.rows.length - 1);
   });
+
+  test("changed calls only: unchanged calls go, unless something below them changed", () => {
+    const sp = (spanId: string, parentId: string | undefined, name: string, duration: number): Span => ({ spanId, parentId, name, service: "s", start: 0, duration });
+    // root (same) > mid (same) > leaf (slower); root > quiet (same) > calm (same)
+    const a = new TraceModel([sp("r", undefined, "root", 1000), sp("m", "r", "mid", 500), sp("l", "m", "leaf", 10), sp("q", "r", "quiet", 100), sp("c", "q", "calm", 50)]);
+    const b = new TraceModel([sp("R", undefined, "root", 1020), sp("M", "R", "mid", 510), sp("L", "M", "leaf", 30), sp("Q", "R", "quiet", 100), sp("C", "Q", "calm", 50)]);
+    const e = new ComparisonEngine();
+    e.set(a, b);
+    expect(e.rows.length).toBe(5);
+    e.setSize(600, 300);
+    e.scrollY = 50;
+    e.changedOnly = true;
+    expect(e.rows.map((r) => r.name)).toEqual(["root", "mid", "leaf"]);
+    expect(e.hidden).toBe(2);
+    expect(e.scrollY).toBe(0); // three rows fit
+    expect(e.biggest(1)[0].name).toBe("leaf"); // the summary still reads every call
+    e.changedOnly = false;
+    expect(e.rows.length).toBe(5);
+    // A new trace keeps the filter on.
+    e.changedOnly = true;
+    e.set(b, a);
+    expect(e.rows.map((r) => r.name)).toEqual(["root", "mid", "leaf"]);
+    // The generated failed trace: fewer rows, every new retry still there.
+    const ok = new TraceModel(checkoutTrace(21, 0).spans);
+    const bad = new TraceModel(checkoutTrace(22, 0, { error: true }).spans);
+    e.set(ok, bad);
+    expect(e.rows.length).toBeLessThanOrEqual(e.all.length);
+    expect(e.rows.filter((r) => e.kind(r) === "new").length).toBe(e.all.filter((r) => e.kind(r) === "new").length);
+    // Each kept row's parent is kept: depths step down by at most one.
+    for (let i = 1; i < e.rows.length; i++) expect(e.rows[i].depth).toBeLessThanOrEqual(e.rows[i - 1].depth + 1);
+  });
 });
 
 describe("review fixes", () => {

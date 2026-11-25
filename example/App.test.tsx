@@ -151,6 +151,12 @@ test("compare a failed trace with a healthy one, then press a row to open it in 
   // The opening trace failed: its payment retries are new calls.
   expect(app.texts().some((t) => /^\d+ slower · \d+ faster · [1-9]\d* new · \d+ gone$/.test(t))).toBe(true);
   expect(app.accessibility("id:comparison-plot")?.label ?? "").toContain("Most time added:");
+  // Only the calls that changed, and back.
+  await app.press("id:comparison-changed-only");
+  await app.wait(50);
+  expect(app.texts().some((t) => /^Changed calls only · \d+ hidden$/.test(t))).toBe(true);
+  await app.press("id:comparison-changed-only");
+  await app.wait(50);
   await app.drag("id:comparison-plot", { x: 0, y: 0 }); // a tap on a row
   await app.waitFor("id:waterfall-plot");
   expect(app.texts()).not.toContain("Select a span to see its attributes");
