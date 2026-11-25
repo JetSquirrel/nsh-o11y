@@ -9,6 +9,7 @@ import {
   TimeSeriesChart,
   TraceModel,
   TraceWaterfall,
+  TraceComparison,
   createChartController,
   createChartSync,
   createTimeSeries,
@@ -200,6 +201,13 @@ function App() {
     const spans = id ? logSource.trace(id) : undefined;
     return spans ? new TraceModel(spans) : null;
   });
+  // Comparing: the open trace next to the newest one of the same endpoint that did not fail.
+  const comparing = signal(false);
+  const healthy = computed(() => {
+    const id = traceId();
+    const route = trace()?.roots[0]?.name;
+    return logSource.recent(500).find((tr) => tr.traceId !== id && tr.spans.every((s) => s.status !== "error") && tr.spans.some((s) => !s.parentId && s.name === route));
+  });
 
   // ---- A CPU profile.
   const profile = profileFromFolded(checkoutProfile());
@@ -307,10 +315,29 @@ function App() {
       </View>
       <View style={{ flex: 1, gap: 14 }}>
         <Panel>
-          <Text class="text-sm font-medium text-foreground" style={{ marginBottom: 6 }}>
-            {traceId() ? `Trace ${traceId()!.slice(0, 16)}…` : "Trace"}
-          </Text>
-          {trace() ? (
+          <View class="flex-row items-center" style={{ gap: 6, marginBottom: 6 }}>
+            <Text class="text-sm font-medium text-foreground" style={{ flex: 1 }}>
+              {traceId() ? `Trace ${traceId()!.slice(0, 16)}…` : "Trace"}
+            </Text>
+            <Segment label="Waterfall" active={!comparing()} onPress={() => comparing.set(false)} testID="trace-waterfall" />
+            <Segment label="Compare with a healthy one" active={comparing()} onPress={() => comparing.set(true)} testID="trace-compare" />
+          </View>
+          {trace() && comparing() && healthy() ? (
+            <TraceComparison
+              testID="comparison"
+              a={healthy()!.spans}
+              b={trace()!}
+              aLabel={`healthy ${healthy()!.traceId.slice(0, 8)}`}
+              bLabel={`this trace ${traceId()!.slice(0, 8)}`}
+              onSelect={(row) => {
+                if (row.b) {
+                  comparing.set(false);
+                  span.set(row.b);
+                }
+              }}
+              style={{ flex: 1 }}
+            />
+          ) : trace() ? (
             <TraceWaterfall testID="waterfall" spans={trace()!} selected={span()?.spanId ?? null} onSelect={(s) => span.set(s)} style={{ flex: 1 }} />
           ) : (
             <Text class="text-sm text-muted-foreground">No trace selected</Text>

@@ -44,6 +44,10 @@ test("screenshots: logs, a trace, a profile", async () => {
   await app.drag("id:waterfall-plot", { x: 160, y: 0 }); // zoom: the overview marks the range
   await app.wait(300);
   await shot("traces");
+  await app.press("id:trace-compare");
+  await app.wait(400);
+  await shot("traces-compare");
+  await app.press("id:trace-waterfall");
   await app.press("id:tab-profiles");
   await app.wait(500);
   await shot("profiles");
