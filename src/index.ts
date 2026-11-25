@@ -44,6 +44,19 @@ export { TraceWaterfall, type TraceWaterfallProps } from "./TraceWaterfall";
 export { TraceComparison, type TraceComparisonProps } from "./TraceComparison";
 export { compareTraces, ComparisonEngine, renderComparison, renderComparisonOverlay, type ComparisonRow } from "./tracediff";
 export { TraceModel, type Span, type SpanEvent, type WaterfallRow } from "./traces";
+export { ServiceMap, type ServiceMapProps } from "./ServiceMap";
+export {
+  serviceGraph,
+  ServiceMapEngine,
+  renderServiceMap,
+  renderServiceMapOverlay,
+  type ServiceGraph,
+  type ServiceNode,
+  type ServiceEdge,
+  type ServiceMapOptions,
+  type PlacedNode,
+  type PlacedEdge,
+} from "./servicegraph";
 export { WaterfallEngine, renderWaterfall, renderWaterfallOverlay, type WaterfallOptions } from "./waterfall";
 export { FlameGraph, type FlameGraphProps } from "./FlameGraph";
 export { SandwichView, type SandwichViewProps } from "./SandwichView";

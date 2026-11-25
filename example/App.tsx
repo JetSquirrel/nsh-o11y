@@ -10,6 +10,7 @@ import {
   TraceModel,
   TraceWaterfall,
   TraceComparison,
+  ServiceMap,
   createChartController,
   createChartSync,
   createTimeSeries,
@@ -172,8 +173,18 @@ function App() {
   const tab = signal<Tab>("metrics");
   const errorsOnly = signal(false);
   const isError = (tr: { spans: Span[] }) => tr.spans.some((s) => s.status === "error");
-  /** The newest 40 traces, or the newest 40 that failed. */
-  const recentTraces = () => (errorsOnly() ? logSource.recent(500).filter(isError).slice(0, 40) : logSource.recent(40));
+  /** The service picked on the map: the list shows only traces through it. */
+  const through = signal<string | null>(null);
+  const passes = (tr: { spans: Span[] }, service: string) => tr.spans.some((s) => s.service === service);
+  /** The newest 40 traces, or the newest 40 that failed, through the service picked on the map if one is. */
+  const recentTraces = () => {
+    const service = through();
+    if (!service && !errorsOnly()) return logSource.recent(40);
+    return logSource
+      .recent(500)
+      .filter((tr) => (!errorsOnly() || isError(tr)) && (!service || passes(tr, service)))
+      .slice(0, 40);
+  };
   const traceList = signal(recentTraces());
   const refreshTraces = () => traceList.set(recentTraces());
   const traceId = signal<string | null>(null);
@@ -203,6 +214,13 @@ function App() {
   });
   // Comparing: the open trace next to the newest one of the same endpoint that did not fail.
   const comparing = signal(false);
+  // The service map: the newest 500 traces, taken when it opens (and again when the list refreshes).
+  const mapping = signal(false);
+  const mapTraces = signal<Span[][]>([]);
+  const showMap = () => {
+    mapTraces.set(logSource.recent(500).map((tr) => tr.spans));
+    mapping.set(true);
+  };
   const healthy = computed(() => {
     const id = traceId();
     const route = trace()?.roots[0]?.name;
@@ -268,6 +286,20 @@ function App() {
           <Text class="text-sm font-medium text-foreground" style={{ flex: 1 }}>
             Recent traces
           </Text>
+          {through() ? (
+            <View
+              role="button"
+              testID="through-clear"
+              accessibilityLabel={`Through ${through()}: clear`}
+              onPress={() => {
+                through.set(null);
+                refreshTraces();
+              }}
+              class="rounded-md border border-border px-2 py-0.5 hover:bg-accent"
+            >
+              <Text class="text-xs text-foreground">{`${through()} ✕`}</Text>
+            </View>
+          ) : null}
           <View
             role="checkbox"
             testID="errors-only"
@@ -292,7 +324,10 @@ function App() {
                 role="button"
                 testID={`trace-${i()}`}
                 accessibilityState={{ selected: traceId() === tr().traceId }}
-                onPress={() => showTrace(tr().traceId)}
+                onPress={() => {
+                  mapping.set(false);
+                  showTrace(tr().traceId);
+                }}
                 class={`px-3 py-1.5 ${traceId() === tr().traceId ? "bg-accent" : "hover:bg-accent"}`}
                 style={{ gap: 1 }}
               >
@@ -317,12 +352,40 @@ function App() {
         <Panel>
           <View class="flex-row items-center" style={{ gap: 6, marginBottom: 6 }}>
             <Text class="text-sm font-medium text-foreground" style={{ flex: 1 }}>
-              {traceId() ? `Trace ${traceId()!.slice(0, 16)}…` : "Trace"}
+              {mapping() ? `Services in the last ${mapTraces().length} traces` : traceId() ? `Trace ${traceId()!.slice(0, 16)}…` : "Trace"}
             </Text>
-            <Segment label="Waterfall" active={!comparing()} onPress={() => comparing.set(false)} testID="trace-waterfall" />
-            <Segment label="Compare with a healthy one" active={comparing()} onPress={() => comparing.set(true)} testID="trace-compare" />
+            <Segment
+              label="Waterfall"
+              active={!comparing() && !mapping()}
+              onPress={() => {
+                comparing.set(false);
+                mapping.set(false);
+              }}
+              testID="trace-waterfall"
+            />
+            <Segment
+              label="Compare with a healthy one"
+              active={comparing() && !mapping()}
+              onPress={() => {
+                comparing.set(true);
+                mapping.set(false);
+              }}
+              testID="trace-compare"
+            />
+            <Segment label="Service map" active={mapping()} onPress={showMap} testID="trace-map" />
           </View>
-          {trace() && comparing() && healthy() ? (
+          {mapping() ? (
+            <ServiceMap
+              testID="service-map"
+              traces={mapTraces()}
+              selected={through()}
+              onSelectedChange={({ selected }) => {
+                through.set(selected);
+                refreshTraces();
+              }}
+              style={{ flex: 1 }}
+            />
+          ) : trace() && comparing() && healthy() ? (
             <TraceComparison
               testID="comparison"
               a={healthy()!.spans}

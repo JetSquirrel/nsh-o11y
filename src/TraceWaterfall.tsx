@@ -1,6 +1,6 @@
 /**
  * `<TraceWaterfall>`: one trace as a waterfall. Each span is a row: its name indented under its parent,
- * and a bar from its start for its duration, colored by service; errors are outlined in red and the
+ * and a bar from its start for its duration, colored by service; errors have a red edge inside their bar and the
  * critical path underlined. Drawn on two canvases (rows, and the hover and tooltip over them), only the
  * rows in view, so traces of tens of thousands of spans scroll smoothly.
  *

@@ -178,8 +178,8 @@ const spans: Span[] = [
 <TraceWaterfall spans={spans} onSelect={(span) => showDetails(span)} style={{ flex: 1 }} />
 ```
 
-Each span gets a row: its name indented under its parent, and a bar colored by service. Error spans are
-outlined in red, the critical path is underlined, and span events are diamonds on the bars (red for exceptions;
+Each span gets a row: its name indented under its parent, and a bar colored by service. Error spans have
+a red edge inside their bar, the critical path is underlined, and span events are diamonds on the bars (red for exceptions;
 the tooltip lists them). A controlled `selected` scrolls its row into view. Press a row to select it, or its triangle to fold its
 children. Drag across the timeline to zoom, Ctrl/⌘ + scroll to zoom, scroll through the rows, Shift + scroll to
 pan, double-click to zoom out. Above the time axis, an overview shows every span of the trace (folded or not)
@@ -205,6 +205,27 @@ stayed the same, unless something below them changed, and says how many it hid. 
 right jump to the previous or next call that changed, and Enter opens the row as a press does.
 `compareTraces(a, b)` works headless. In the example, "Compare with a healthy one" on a failed
 trace shows its payment retries as new calls and their time running up the tree.
+
+### `ServiceMap`
+
+```tsx
+<ServiceMap traces={recentTraces} selected={service()} onSelectedChange={({ selected }) => filterBy(selected)} style={{ flex: 1 }} />
+```
+
+The services many traces go through, and the calls between them. A call from A to B is a span in service B
+whose parent is in service A; a service counts the spans that enter it (roots, and spans called from another
+service). Services are laid out left to right: entry services first, each callee a column right of its deepest
+caller, and each column ordered to cross as few calls as it can. A call that goes back (a cycle) is dashed and
+routed under the boxes. Each box shows the service's request rate (a count when the traces span under a second),
+p95 and share of failures; a column too full for two lines gets one-line boxes. An edge's width follows its calls,
+and its rate is written on it where there is room. Services and calls whose share of failures reaches
+`errorThreshold` (default 1%) are drawn in the theme's error color (`colors.error`, by default the `destructive`
+token). Hover a service to light it with its callers and callees, or an edge for its numbers. On a touch screen a
+tap shows the service's numbers instead. Press a service to select it. From the keyboard, → goes to the busiest
+callee, ← to the busiest caller, ↑/↓ through the column, Home and End to the first and last service, and Escape
+clears. Props: `traces` (`Span[]`s, `TraceModel`s, or a graph from `serviceGraph()`), `selected`,
+`onSelectedChange`, `errorThreshold`, `edgeLabels`. `serviceGraph(traces)` works headless. In the example,
+"Service map" maps the newest 500 traces, and selecting a service narrows the trace list to the traces through it.
 
 ### `FlameGraph`
 
@@ -274,6 +295,8 @@ src/
   TraceWaterfall.tsx  the waterfall component
   tracediff.ts        compareTraces: two traces matched call by call; its engine and renderer
   TraceComparison.tsx a slow or failed trace against a healthy one
+  servicegraph.ts     serviceGraph: services and calls from many traces; its layout, engine and renderer
+  ServiceMap.tsx      the service map component
   profile.ts          call trees from folded stacks, stacks or trees; top functions; search
   flame.ts            the flame graph's engine and renderer
   FlameGraph.tsx      the flame graph component

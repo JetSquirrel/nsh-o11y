@@ -19,6 +19,7 @@ export function resolveTheme(colors: ChartColors | undefined, fontFamily?: strin
     grid: c.grid ?? withAlpha(muted, dark ? 0.16 : 0.14),
     cursor: c.cursor ?? withAlpha(fg, 0.55),
     selection: c.selection ?? token("primary"),
+    error: c.error ?? token("destructive"),
     surface: c.background ?? token("background"),
     palette: c.palette ?? (dark ? PALETTE_DARK : PALETTE_LIGHT),
     fontFamily: fontFamily ?? "system-ui",

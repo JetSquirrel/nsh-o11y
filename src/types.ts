@@ -71,6 +71,8 @@ export interface ChartColors {
   cursor?: string;
   /** The drag-to-zoom box. */
   selection?: string;
+  /** Failures: failed calls and services. Default: the theme's `destructive` token. */
+  error?: string;
   /** Series colors in order. */
   palette?: readonly string[];
 }
@@ -83,6 +85,8 @@ export interface ChartTheme {
   grid: string;
   cursor: string;
   selection: string;
+  /** Failures. Optional so themes made by hand keep working; absent, failures are drawn #e34948. */
+  error?: string;
   /** What the dots at the cursor are ringed with: the surface they sit on. */
   surface: string;
   palette: readonly string[];
