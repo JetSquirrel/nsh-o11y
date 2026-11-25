@@ -78,8 +78,11 @@ const TRACE_SCALE = 10;
 /** The per-frame cost of the last `renderPlot`, for perf readouts. */
 export const renderStats = { traceMs: 0, points: 0, samples: 0 };
 
-/** Draws the plot layer. Call `engine.update()` first. */
-export function renderPlot(cx: Ctx2D, engine: ChartEngine, theme: ChartTheme, path: PathFactory) {
+/**
+ * Draws the plot layer. Call `engine.update()` first. `density` is the canvas's pixels per point: series are
+ * decimated per device pixel, not per point, or a dense line on a 2x screen shows its columns as a saw.
+ */
+export function renderPlot(cx: Ctx2D, engine: ChartEngine, theme: ChartTheme, path: PathFactory, density = 1) {
   const { plot } = engine;
   const font = fontOf(theme);
   const right = plot.left + plot.width;
@@ -152,7 +155,7 @@ export function renderPlot(cx: Ctx2D, engine: ChartEngine, theme: ChartTheme, pa
       top: plot.top,
       width: plot.width,
       height: plot.height,
-      density: 1,
+      density,
       scale: TRACE_SCALE,
     };
     // Paths come in tenths of a point (integers are quicker to write and parse): draw them scaled down.

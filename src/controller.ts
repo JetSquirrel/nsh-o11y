@@ -99,11 +99,12 @@ export class ChartController {
     engine.setSize(w, h);
     engine.update();
     const t = { ...theme, background: options.background ?? theme.background ?? null };
-    renderPlot(cx, engine, t, (d) => new Path2D(d));
+    const scale = options.scale ?? 2;
+    renderPlot(cx, engine, t, (d) => new Path2D(d), scale);
     renderOverlay(cx, engine, t);
     engine.setSize(ow, oh);
     engine.update();
-    return canvas.convertToBlob({ scale: options.scale ?? 2 });
+    return canvas.convertToBlob({ scale });
   }
 }
 

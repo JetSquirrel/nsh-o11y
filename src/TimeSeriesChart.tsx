@@ -14,6 +14,7 @@
 import {
   Canvas,
   Path2D,
+  pixelRatio,
   Text,
   View,
   cleanup,
@@ -471,7 +472,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
             plotFrame();
             theme();
             const t = prepare(cx as unknown as Ctx2D, size.width, size.height);
-            renderPlot(cx as unknown as Ctx2D, engine, t, PATH);
+            renderPlot(cx as unknown as Ctx2D, engine, t, PATH, pixelRatio());
             untracked(() => {
               // The legend's values are as precise as their axis's ticks, which the layout just worked out. Made
               // before it (and before the options, so in the default unit), they stayed wrong until new data came
