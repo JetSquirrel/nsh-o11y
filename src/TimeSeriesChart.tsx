@@ -122,6 +122,8 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
   // What the legend shows: the cursor's sample, or the last one.
   const readout = signal<CursorInfo | null>(null, { equals: () => false });
   const hidden = signal(0);
+  /** The axis steps the legend's values were written with. */
+  let readoutSteps: [number, number] = [NaN, NaN];
   let plotDirty = true;
   let overlayDirty = true;
 
@@ -471,6 +473,13 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
             const t = prepare(cx as unknown as Ctx2D, size.width, size.height);
             renderPlot(cx as unknown as Ctx2D, engine, t, PATH);
             untracked(() => {
+              // The legend's values are as precise as their axis's ticks, which the layout just worked out. Made
+              // before it (and before the options, so in the default unit), they stayed wrong until new data came
+              // in: data that does not change (a query's result) kept "1.28k" where "1.284k req/s" belongs.
+              if (engine.yStep !== readoutSteps[0] || engine.y2Step !== readoutSteps[1]) {
+                readoutSteps = [engine.yStep, engine.y2Step];
+                readout.set(engine.cursorInfo() ?? engine.infoAt(-1));
+              }
               report();
               // The overlay draws after the plot: it reads the layout the plot just made.
               overlayFrame.update((n) => n + 1);
