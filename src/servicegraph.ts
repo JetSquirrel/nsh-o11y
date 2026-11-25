@@ -289,8 +289,16 @@ export class ServiceMapEngine {
     const fs = this.fontSize;
     const pad = 12;
     const cols = Math.max(1, this.layers.length);
-    const minGap = 28;
-    const w = Math.max(84, Math.min(180, (this.width - pad * 2 - (cols - 1) * minGap) / cols));
+    // Boxes as wide as 180 points, narrower to fit every column; gaps narrow from 28 to 14 before boxes go under
+    // 64. Columns never overlap: under 36 points a box only shows its color and the start of its name.
+    const across = this.width - pad * 2;
+    let minGap = 28;
+    let w = (across - (cols - 1) * minGap) / cols;
+    if (w < 64) {
+      minGap = 14;
+      w = (across - (cols - 1) * minGap) / cols;
+    }
+    w = Math.floor(Math.max(36, Math.min(180, w)));
     const span = Math.max(0, this.width - pad * 2 - w);
     // Room under the boxes for curves that go back.
     const below = g.edges.some((_, i) => this.isBack(i)) ? 28 : 0;
@@ -603,9 +611,11 @@ export function renderServiceMap(cx: Ctx2D, e: ServiceMapEngine, theme: ChartThe
     cx.stroke();
     // The service's color, a strip on the left inside the box.
     cx.fillStyle = p.color;
-    cx.fillRect(p.x + 4, p.y + 6, 3, p.h - 12);
-    const tx = p.x + 13;
-    const room = p.x + p.w - 8 - tx;
+    // Narrow boxes (a narrow view) give the name what padding they can spare.
+    const narrow = p.w < 90;
+    cx.fillRect(p.x + (narrow ? 3 : 4), p.y + 6, 3, p.h - 12);
+    const tx = p.x + (narrow ? 9 : 13);
+    const room = p.x + p.w - (narrow ? 4 : 8) - tx;
     const lines = e.compact ? 1 : 2;
     const ty = p.y + (p.h - lh * lines + (lh - fs)) / 2;
     const share = n.errors ? formatValue(n.errors / n.requests, "percentunit") : "";

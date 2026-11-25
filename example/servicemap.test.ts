@@ -104,6 +104,16 @@ describe("layout", () => {
     }
   });
 
+  test("a narrow view narrows the boxes: columns never overlap", () => {
+    for (const width of [900, 480, 320, 240]) {
+      const e = engineFor(checkouts(), width, 420);
+      const byLayer = [...new Set(e.nodes.map((p) => p.layer))].sort((a, b) => a - b);
+      const xs = byLayer.map((l) => e.nodes.find((p) => p.layer === l)!);
+      for (let i = 1; i < xs.length; i++) expect(xs[i].x).toBeGreaterThanOrEqual(xs[i - 1].x + xs[i - 1].w + 8);
+      for (const p of e.nodes) expect(p.x + p.w).toBeLessThanOrEqual(width);
+    }
+  });
+
   test("a short view gets one-line boxes, so the fullest column still fits", () => {
     const tall = engineFor(checkouts(), 900, 420);
     expect(tall.compact).toBe(false);
