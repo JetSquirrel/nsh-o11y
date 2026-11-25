@@ -4,7 +4,7 @@
  * or is new, blue where it got faster or is gone, with the change at the end of the row. A slow or failed
  * request next to a healthy one: the rows in red are where the time went.
  */
-import { Canvas, Path2D, Text, View, computed, effect, signal, untracked, type GestureResponderEvent, type MouseEvent, type ViewStyle, type WheelEvent } from "nsh";
+import { Canvas, Path2D, Text, View, computed, effect, signal, untracked, type GestureResponderEvent, type KeyEvent, type MouseEvent, type ViewRef, type ViewStyle, type WheelEvent } from "nsh";
 import { fontOf, measureCached, type Ctx2D } from "./render";
 
 import { resolveTheme } from "./theme";
@@ -36,6 +36,7 @@ export interface TraceComparisonProps {
 }
 
 const PATH = (d: string) => new Path2D(d);
+const KEYS = ["up", "down", "left", "right", "home", "end", "enter", "space"] as const;
 
 export function TraceComparison(props: TraceComparisonProps) {
   const e = new ComparisonEngine();
@@ -47,12 +48,15 @@ export function TraceComparison(props: TraceComparisonProps) {
   let drag: { originY: number; lastY: number; startY: number; moved: boolean } | null = null;
   const changedOnly = signal(untracked(() => props.changedOnly ?? false));
   const hidden = signal(0);
+  const cursor = signal<ComparisonRow | undefined>(undefined);
+  let plotRef: ViewRef | undefined;
 
   effect(() => {
     const a = props.a;
     const b = props.b;
     untracked(() => {
       e.set(model(a), model(b));
+      cursor.set(undefined);
       const n = { slower: 0, faster: 0, added: 0, gone: 0, top: e.biggest(1)[0] };
       for (const r of e.all) {
         const k = e.kind(r);
@@ -70,6 +74,7 @@ export function TraceComparison(props: TraceComparisonProps) {
     const on = changedOnly();
     untracked(() => {
       e.changedOnly = on;
+      cursor.set(e.rows[e.cursor]);
       hidden.set(e.hidden);
       plotFrame.update((v) => v + 1);
       overlayFrame.update((v) => v + 1);
@@ -115,14 +120,42 @@ export function TraceComparison(props: TraceComparisonProps) {
     drag = null;
     if (!d || d.moved) return;
     const i = e.rowAt(d.startY);
-    if (i >= 0) props.onSelect?.(e.rows[i]);
+    plotRef?.focus();
+    if (i >= 0) {
+      e.cursor = i;
+      cursor.set(e.rows[i]);
+      overlayFrame.update((v) => v + 1);
+      props.onSelect?.(e.rows[i]);
+    }
+  };
+  const onKeyDown = (ev: KeyEvent) => {
+    // Up and down walk the rows, left and right jump to the previous or next call that changed.
+    const moves: Record<string, "up" | "down" | "first" | "last" | "prev" | "next"> = {
+      ArrowUp: "up",
+      ArrowDown: "down",
+      Home: "first",
+      End: "last",
+      ArrowLeft: "prev",
+      ArrowRight: "next",
+    };
+    const to = moves[ev.key];
+    if (to) {
+      if (e.moveCursor(to)) {
+        cursor.set(e.rows[e.cursor]);
+        plotFrame.update((v) => v + 1);
+      }
+      return;
+    }
+    if ((ev.key === "Enter" || ev.key === " ") && e.rows[e.cursor]) props.onSelect?.(e.rows[e.cursor]);
   };
 
   const label = () => {
     const s = summary();
     const top = s.top;
     const head = `Trace comparison: ${s.slower} calls slower, ${s.faster} faster, ${s.added} new, ${s.gone} gone`;
-    return top ? `${head}. Most time added: ${top.name}, ${e.changeText(top)}` : head;
+    const at = cursor();
+    const on = at ? `. On ${at.name}, ${e.changeText(at)}` : "";
+    return (top ? `${head}. Most time added: ${top.name}, ${e.changeText(top)}` : head) + on;
   };
 
   return (
@@ -184,6 +217,10 @@ export function TraceComparison(props: TraceComparisonProps) {
           onWheel={onWheel}
           onMouseMove={onMouseMove}
           onMouseLeave={onMouseLeave}
+          focusable
+          ref={(r) => (plotRef = r)}
+          captureKeys={KEYS}
+          onKeyDown={onKeyDown}
           draw={(cx) => {
             overlayFrame();
             renderComparisonOverlay(cx as unknown as Ctx2D, e, untracked(theme));

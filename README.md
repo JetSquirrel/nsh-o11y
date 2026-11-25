@@ -199,7 +199,9 @@ in grey above the other trace's bar. That bar is red where the call got slower o
 got faster or is gone. The change is shown at the end of the row, and changes under 1 ms or 10% stay neutral.
 The summary counts slower, faster, new and gone calls, and the screen-reader label names the call that added
 the most time. "Changed calls only" in the legend (or `changedOnly` to start that way) hides the calls that
-stayed the same, unless something below them changed, and says how many it hid. `compareTraces(a, b)` works headless. In the example, "Compare with a healthy one" on a failed
+stayed the same, unless something below them changed, and says how many it hid. From the keyboard, up and down walk the rows, Home and End go to the ends, left and
+right jump to the previous or next call that changed, and Enter opens the row as a press does.
+`compareTraces(a, b)` works headless. In the example, "Compare with a healthy one" on a failed
 trace shows its payment retries as new calls and their time running up the tree.
 
 ### `FlameGraph`

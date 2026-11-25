@@ -95,6 +95,7 @@ export class ComparisonEngine {
     this.span = Math.max(1e-6, a.duration, b.duration);
     this.scrollY = 0;
     this.hover = -1;
+    this.cursor = -1;
     this.filter();
   }
 
@@ -107,8 +108,12 @@ export class ComparisonEngine {
     if (on === this.changed) return;
     this.changed = on;
     this.hover = -1;
+    // The cursor stays on its call when that call is still shown.
+    const at = this.rows[this.cursor];
     this.filter();
+    this.cursor = at ? this.rows.indexOf(at) : -1;
     this.clampScroll();
+    if (this.cursor >= 0) this.reveal(this.cursor);
   }
 
   /** How many rows `changedOnly` hides. */
@@ -175,6 +180,44 @@ export class ComparisonEngine {
 
   rowTop(i: number) {
     return this.header + i * this.rowHeight - this.scrollY;
+  }
+
+  /** The keyboard's row (-1: none yet). */
+  cursor = -1;
+
+  /** Scrolls the least that shows row `i` whole. */
+  reveal(i: number) {
+    const top = i * this.rowHeight;
+    const view = this.height - this.header;
+    if (top < this.scrollY) this.scrollY = top;
+    else if (top + this.rowHeight > this.scrollY + view) this.scrollY = top + this.rowHeight - view;
+    this.clampScroll();
+  }
+
+  /**
+   * Moves the cursor: "up" / "down" a row, "first" / "last", or "next" / "prev" to the nearest row that
+   * changed. The first move lands on the first row. False when it could not move.
+   */
+  moveCursor(to: "up" | "down" | "first" | "last" | "next" | "prev") {
+    const n = this.rows.length;
+    if (!n) return false;
+    let i = this.cursor;
+    if (i < 0 || i >= n) i = to === "last" ? n - 1 : to === "next" || to === "prev" ? -1 : 0;
+    else if (to === "up") i = Math.max(0, i - 1);
+    else if (to === "down") i = Math.min(n - 1, i + 1);
+    else if (to === "first") i = 0;
+    else if (to === "last") i = n - 1;
+    if (to === "next" || to === "prev") {
+      const d = to === "next" ? 1 : -1;
+      let j = this.cursor >= 0 && this.cursor < n ? this.cursor + d : d > 0 ? 0 : n - 1;
+      while (j >= 0 && j < n && this.kind(this.rows[j]) === "same") j += d;
+      if (j < 0 || j >= n) return false;
+      i = j;
+    }
+    if (i === this.cursor) return false;
+    this.cursor = i;
+    this.reveal(i);
+    return true;
   }
 
   /** "slower", "faster", "same", "new" or "gone". */
@@ -310,15 +353,26 @@ export function renderComparison(cx: Ctx2D, e: ComparisonEngine, theme: ChartThe
 }
 
 export function renderComparisonOverlay(cx: Ctx2D, e: ComparisonEngine, theme: ChartTheme) {
-  if (e.hover < 0) return;
+  const cur = e.cursor >= 0 && e.cursor < e.rows.length;
+  if (e.hover < 0 && !cur) return;
   cx.save();
   cx.beginPath();
   cx.rect(0, e.header, e.width, e.height - e.header);
   cx.clip();
-  cx.globalAlpha = 0.07;
-  cx.fillStyle = theme.text;
-  cx.fillRect(0, r1(e.rowTop(e.hover)), e.width, e.rowHeight);
-  cx.globalAlpha = 1;
+  if (e.hover >= 0) {
+    cx.globalAlpha = 0.07;
+    cx.fillStyle = theme.text;
+    cx.fillRect(0, r1(e.rowTop(e.hover)), e.width, e.rowHeight);
+    cx.globalAlpha = 1;
+  }
+  if (cur) {
+    // The keyboard's row: an outline, so it reads over the hover's shade.
+    cx.strokeStyle = theme.text;
+    cx.lineWidth = 1.5;
+    cx.beginPath();
+    cx.rect(1.25, r1(e.rowTop(e.cursor)) + 1.25, e.width - 2.5, e.rowHeight - 2.5);
+    cx.stroke();
+  }
   cx.restore();
-  drawTooltip(cx, theme, e.rowLines(e.hover), e.pointer.x, e.pointer.y, e.width, e.height);
+  if (e.hover >= 0) drawTooltip(cx, theme, e.rowLines(e.hover), e.pointer.x, e.pointer.y, e.width, e.height);
 }

@@ -779,6 +779,43 @@ describe("trace comparison", () => {
     // Each kept row's parent is kept: depths step down by at most one.
     for (let i = 1; i < e.rows.length; i++) expect(e.rows[i].depth).toBeLessThanOrEqual(e.rows[i - 1].depth + 1);
   });
+
+  test("the keyboard cursor: rows, ends, jumps between changes, scrolling to keep it in view", () => {
+    const ok = new TraceModel(checkoutTrace(21, 0).spans);
+    const bad = new TraceModel(checkoutTrace(22, 0, { error: true }).spans);
+    const e = new ComparisonEngine();
+    e.set(ok, bad);
+    e.setSize(900, 26 + 30 * 4); // four rows show
+    expect(e.cursor).toBe(-1);
+    expect(e.moveCursor("down")).toBe(true);
+    expect(e.cursor).toBe(0);
+    expect(e.moveCursor("up")).toBe(false);
+    e.moveCursor("last");
+    expect(e.cursor).toBe(e.rows.length - 1);
+    expect(e.rowAt(e.height - 1)).toBe(e.cursor); // scrolled down to it
+    e.moveCursor("first");
+    expect(e.scrollY).toBe(0);
+    // Right and left skip the calls that stayed the same.
+    const changed = e.rows.map((r, i) => (e.kind(r) === "same" ? -1 : i)).filter((i) => i >= 0);
+    expect(changed.length).toBeGreaterThan(1);
+    e.cursor = -1;
+    e.moveCursor("next");
+    expect(e.cursor).toBe(changed[0]);
+    e.moveCursor("next");
+    expect(e.cursor).toBe(changed[1]);
+    e.moveCursor("prev");
+    expect(e.cursor).toBe(changed[0]);
+    // The filter keeps the cursor on its call; new traces drop it.
+    const row = e.rows[e.cursor];
+    e.changedOnly = true;
+    expect(e.rows[e.cursor]).toBe(row);
+    e.changedOnly = false;
+    expect(e.rows[e.cursor]).toBe(row);
+    const cx = ctx(900, e.height);
+    renderComparisonOverlay(cx, e, THEME); // the outline, no hover
+    e.set(ok, bad);
+    expect(e.cursor).toBe(-1);
+  });
 });
 
 describe("review fixes", () => {
