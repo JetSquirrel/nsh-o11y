@@ -127,3 +127,24 @@ export function serviceMetrics(seed = 7, incidents: [number, number][] = []) {
     },
   };
 }
+
+/**
+ * Single requests' latencies to go with a `serviceMetrics` sample: `perSample` draws from a log-normal with
+ * the sample's p50, spread so its p99 matches, plus failures past the usual 1% as a second, slow band (requests that
+ * waited on retries to the card processor), which percentiles blur and a heatmap shows apart.
+ */
+export function requestLatencies(perSample = 5, seed = 13) {
+  const r = rng(seed);
+  return (m: { p50: number; p99: number }, failed: number) => {
+    const sigma = Math.max(0.05, Math.log(Math.max(m.p99, m.p50 * 1.01) / m.p50) / 2.326);
+    // Only failures past the usual 1% wait on retries: the background errors fail fast.
+    const slow = Math.max(0, failed - 0.01) * 3;
+    const out = new Float64Array(perSample);
+    for (let i = 0; i < perSample; i++) {
+      // Box–Muller: a standard normal from two uniforms.
+      const z = Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+      out[i] = r() < slow ? 600 + r() * 900 : m.p50 * Math.exp(sigma * z);
+    }
+    return out;
+  };
+}

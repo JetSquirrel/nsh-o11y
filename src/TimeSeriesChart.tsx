@@ -17,26 +17,25 @@ import {
   Text,
   View,
   cleanup,
-  colorScheme,
   computed,
   effect,
   signal,
-  token,
   untracked,
   type GestureResponderEvent,
   type KeyEvent,
   type MouseEvent,
   type PinchEvent,
+  type ViewRef,
   type ViewStyle,
   type WheelEvent,
 } from "nsh";
 import { ChartEngine } from "./chart";
 import type { ChartController } from "./controller";
-import { PALETTE_DARK, PALETTE_LIGHT, withAlpha } from "./palette";
 import { fontOf, measureCached, renderOverlay, renderPlot, type Ctx2D } from "./render";
 import { formatTimeFull, type TimeZone, type Unit } from "./scale";
 import { TimeSeries, type SeriesStore } from "./store";
 import type { ChartSync } from "./sync";
+import { resolveTheme } from "./theme";
 import type { Annotation, ChartColors, ChartTheme, CursorInfo, SeriesOptions, Threshold } from "./types";
 
 /** Data as plain arrays: times (ms) and one array of values per series. */
@@ -108,6 +107,8 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
   let lastRange = "";
   let lastFollow = true;
   let lastTap = 0;
+  // The plot canvas: a press gives it the keyboard, as Tab would.
+  let plotRef: ViewRef | undefined;
   /** When the mouse last hovered: a drag without one is taken for a finger. */
   let lastHover = 0;
   let gesture: { mode: "pending" | "select" | "pan" | "pinch"; origin: number; start: number; last: number; distance: number } | null = null;
@@ -121,24 +122,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
   let plotDirty = true;
   let overlayDirty = true;
 
-  const theme = computed<ChartTheme>(() => {
-    const c = props.colors ?? {};
-    const dark = colorScheme() === "dark";
-    const fg = token("foreground");
-    const muted = token("muted-foreground");
-    return {
-      background: c.background ?? null,
-      text: c.text ?? fg,
-      muted: c.muted ?? muted,
-      grid: c.grid ?? withAlpha(muted, dark ? 0.16 : 0.14),
-      cursor: c.cursor ?? withAlpha(fg, 0.55),
-      selection: c.selection ?? token("primary"),
-      surface: c.background ?? token("background"),
-      palette: c.palette ?? (dark ? PALETTE_DARK : PALETTE_LIGHT),
-      fontFamily: props.fontFamily ?? "system-ui",
-      fontSize: props.fontSize ?? 11,
-    };
-  });
+  const theme = computed<ChartTheme>(() => resolveTheme(props.colors, props.fontFamily, props.fontSize));
 
   const loop = () => {
     raf = undefined;
@@ -293,6 +277,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
   };
 
   const onGrant = (e: GestureResponderEvent) => {
+    plotRef?.focus();
     const origin = e.pageX - e.locationX;
     gesture = { mode: "pending", origin, start: e.locationX, last: e.locationX, distance: 0 };
     if (e.touches.length >= 2) startPinch(e);
@@ -495,6 +480,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
           accessibilityLabel={label()}
           accessibilityHint="Arrow keys move the cursor, plus and minus zoom, Backspace goes back, 0 resets"
           focusable
+          ref={(r) => (plotRef = r)}
           captureKeys={KEYS}
           onKeyDown={onKeyDown}
           onStartShouldSetResponder={() => true}
