@@ -6,7 +6,7 @@ where native O11y dashboards need it: millions of points, zooming, live data, ma
 other three signals: `LogView` (a log-volume histogram over a virtualized, filterable log list),
 `TraceWaterfall` (one trace's spans as a tree of bars) and `FlameGraph` (a CPU or allocation profile). Everything
 draws on NSH's native `<Canvas>`, so it runs on every NSH platform, and ships as an nshm, laid out like
-[nsh-graph](../nsh-graph).
+[nsh-graph](https://github.com/JetSquirrel/nsh-graph).
 
 **[Site and live demo](https://jetsquirrel.github.io/nsh-o11y/)**: the example dashboard, built with `nsh package --target web`
 (TypeScript store; drag to zoom, wheel to zoom, double-click to reset).
@@ -34,6 +34,12 @@ draws on NSH's native `<Canvas>`, so it runs on every NSH platform, and ships as
   navigation; the series palette is the color-blind-checked one from nsh-graph.
 
 ## Use
+
+Add it to an NSH app (0.7 or later) from crates.io:
+
+```sh
+nsh add nsh-o11y
+```
 
 ```tsx
 import { mount, View } from "nsh";
