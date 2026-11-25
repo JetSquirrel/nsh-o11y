@@ -6,9 +6,10 @@ test("screenshots in dark mode", async () => {
   await app.waitFor("id:latency-heat");
   const shot = async (name: string) => {
     try {
-      await app.screenshot(`../bench/results/dark-${name}.png`);
-    } catch {
-      // Headless: nothing drawn.
+      await app.screenshot(`bench/results/dark-${name}.png`);
+    } catch (e) {
+      // Headless runs draw nothing; anything else (a path that does not resolve) fails the test.
+      if (!String(e).includes("needs a real platform")) throw e;
     }
   };
   await app.wait(800);

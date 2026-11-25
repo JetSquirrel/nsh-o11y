@@ -18,7 +18,7 @@ include = ["/Cargo.toml", "/nsh.json", "/README.md", "/LICENSE", "/src/**/*.ts",
 path = "native/src/lib.rs"
 
 [dependencies]
-nsh-core = "0.6.0"
+nsh-core = "0.7.0"
 
 [profile.dev]
 # Tracing runs every frame: even debug builds need it optimized.

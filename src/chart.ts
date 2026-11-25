@@ -5,10 +5,12 @@
  */
 import { formatTimeFull, formatValue, niceRange, timeTicks, valueTicks, type Tick, type TimeZone, type Unit } from "./scale";
 import type { SeriesStore } from "./store";
-import type { Annotation, CursorInfo, ResolvedSeries, SeriesOptions, Threshold } from "./types";
+import type { Annotation, AxisOptions, AxisSide, CursorInfo, ResolvedSeries, SeriesOptions, Threshold } from "./types";
 
 export interface ChartOptions {
   unit: Unit;
+  /** The second y axis, for the series with `axis: "right"`: its unit and range. */
+  y2: AxisOptions;
   /** Fixed ends of the y range; null or absent ends auto-scale. */
   yMin: number | null;
   yMax: number | null;
@@ -28,6 +30,7 @@ export interface ChartOptions {
 
 export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   unit: "short",
+  y2: {},
   yMin: null,
   yMax: null,
   softMin: undefined,
@@ -68,11 +71,18 @@ export class ChartEngine {
   /** The y range shown, worked out by `update()`. */
   y0 = 0;
   y1 = 1;
+  /** Some series is on the right axis, so it is laid out and drawn. */
+  hasY2 = false;
+  /** The right axis's range, worked out by `update()` when there is one. */
+  y20 = 0;
+  y21 = 1;
 
   xTicks: Tick[] = [];
   xStep = 0;
   yTicks: number[] = [];
   yStep = 0;
+  y2Ticks: number[] = [];
+  y2Step = 0;
 
   /** The cursor's x in points (null: none), and the sample under it. */
   cursorPx: number | null = null;
@@ -103,8 +113,11 @@ export class ChartEngine {
         // A series the legend hid stays hidden while its options change.
         show: prev[i] && prev[i].label === o.label ? prev[i].show : o.show !== false,
         unit: o.unit,
+        axis: o.axis === "right" ? "right" : "left",
       };
     });
+    // Hiding every series on the right keeps its axis, so the plot does not jump.
+    this.hasY2 = this.series.some((s) => s.axis === "right");
     this.yCacheKey = "";
   }
 
@@ -172,7 +185,17 @@ export class ChartEngine {
     let labelW = 0;
     for (const v of this.yTicks) labelW = Math.max(labelW, this.measure(this.formatY(v)));
     const left = Math.ceil(labelW + 10);
-    const right = 12;
+    let right = 12;
+    if (this.hasY2) {
+      this.y2Ticks = valueTicks(this.y20, this.y21, h, o.yTickGap);
+      this.y2Step = this.y2Ticks.length > 1 ? this.y2Ticks[1] - this.y2Ticks[0] : this.y21 - this.y20;
+      let w2 = 0;
+      for (const v of this.y2Ticks) w2 = Math.max(w2, this.measure(this.formatY2(v)));
+      right = Math.ceil(w2 + 10);
+    } else {
+      this.y2Ticks = [];
+      this.y2Step = 0;
+    }
     this.plot = { left, top, width: Math.max(1, this.width - left - right), height: h };
     const t = timeTicks(this.x0, this.x1, this.plot.width, o.xTickGap, o.timeZone);
     this.xTicks = t.ticks;
@@ -180,9 +203,24 @@ export class ChartEngine {
     this.updateCursor();
   }
 
-  /** A y-axis label. */
+  /** A label on the left y axis. */
   formatY(v: number) {
     return formatValue(v, this.options.unit, this.yStep || undefined);
+  }
+
+  /** A label on the right y axis. */
+  formatY2(v: number) {
+    return formatValue(v, this.unitOf("right"), this.y2Step || undefined);
+  }
+
+  /** The unit an axis's values are in. */
+  unitOf(axis: AxisSide): Unit {
+    return axis === "right" ? (this.options.y2.unit ?? this.options.unit) : this.options.unit;
+  }
+
+  /** The range an axis shows. */
+  yRange(axis: AxisSide): [number, number] {
+    return axis === "right" ? [this.y20, this.y21] : [this.y0, this.y1];
   }
 
   private autoY(height: number) {
@@ -191,6 +229,23 @@ export class ChartEngine {
     const key = `${st?.version}|${this.x0}|${this.x1}|${height}|${this.series.map((s) => (s.show ? 1 : 0)).join("")}`;
     if (key === this.yCacheKey) return;
     this.yCacheKey = key;
+    [this.y0, this.y1] = this.scaleAxis("left", height, o.yMin, o.yMax, o.softMin, o.softMax);
+    if (this.hasY2) {
+      const a = o.y2;
+      [this.y20, this.y21] = this.scaleAxis("right", height, a.min ?? null, a.max ?? null, a.softMin, a.softMax);
+    }
+  }
+
+  /** Fits one axis to its shown series in view, and the thresholds near them. */
+  private scaleAxis(
+    axis: AxisSide,
+    height: number,
+    min: number | null,
+    max: number | null,
+    softMin: number | undefined,
+    softMax: number | undefined,
+  ): [number, number] {
+    const st = this.store;
     let lo = Infinity;
     let hi = -Infinity;
     if (st && st.length() > 0) {
@@ -199,25 +254,27 @@ export class ChartEngine {
       let i1 = st.upperBound(this.x1);
       if (i1 < st.length()) i1++;
       for (const s of this.series) {
-        if (!s.show || s.index >= st.seriesCount) continue;
+        if (!s.show || s.axis !== axis || s.index >= st.seriesCount) continue;
         const [a, b] = st.extent(s.index, i0, i1);
         if (a < lo) lo = a;
         if (b > hi) hi = b;
       }
     }
-    for (const t of o.thresholds) {
+    for (const t of this.options.thresholds) {
+      if ((t.axis ?? "left") !== axis) continue;
       // Thresholds near the data stay in view; far ones don't squash it.
       if (lo <= hi && t.value >= lo - (hi - lo) * 0.5 && t.value <= hi + (hi - lo) * 0.5) {
         lo = Math.min(lo, t.value);
         hi = Math.max(hi, t.value);
       }
     }
-    if (o.yMin !== null) lo = o.yMin;
-    if (o.yMax !== null) hi = o.yMax;
-    const [a, b] = niceRange(lo, hi, height, o.yMin ?? o.softMin, o.yMax ?? o.softMax);
-    this.y0 = o.yMin ?? a;
-    this.y1 = o.yMax ?? b;
-    if (!(this.y1 > this.y0)) this.y1 = this.y0 + 1;
+    if (min !== null) lo = min;
+    if (max !== null) hi = max;
+    const [a, b] = niceRange(lo, hi, height, min ?? softMin, max ?? softMax);
+    const y0 = min ?? a;
+    let y1 = max ?? b;
+    if (!(y1 > y0)) y1 = y0 + 1;
+    return [y0, y1];
   }
 
   // ---- Coordinates
@@ -230,8 +287,10 @@ export class ChartEngine {
     return this.x0 + ((px - this.plot.left) / this.plot.width) * (this.x1 - this.x0);
   }
 
-  toPy(v: number) {
-    return this.plot.top + this.plot.height - ((v - this.y0) / (this.y1 - this.y0)) * this.plot.height;
+  /** Where value `v` of an axis (the left one by default) sits, in points from the top. */
+  toPy(v: number, axis: AxisSide = "left") {
+    const [y0, y1] = axis === "right" ? [this.y20, this.y21] : [this.y0, this.y1];
+    return this.plot.top + this.plot.height - ((v - y0) / (y1 - y0)) * this.plot.height;
   }
 
   inPlot(px: number, py: number) {
@@ -374,13 +433,14 @@ export class ChartEngine {
     const st = this.store;
     if (!st || st.length() === 0) return null;
     if (i < 0) i = st.length() - 1;
-    const step = this.yStep || undefined;
     return {
       index: i,
       time: st.x(i),
       values: this.series.map((s) => {
         const v = s.index < st.seriesCount ? st.y(s.index, i) : NaN;
-        return { label: s.label, color: s.color, value: v, text: formatValue(v, s.unit ?? this.options.unit, s.unit ? undefined : step && step / 10), show: s.show };
+        // A tenth of the axis's tick step: as precise as the axis, one digit more.
+        const step = (s.axis === "right" ? this.y2Step : this.yStep) || undefined;
+        return { label: s.label, color: s.color, value: v, text: formatValue(v, s.unit ?? this.unitOf(s.axis), s.unit ? undefined : step && step / 10), show: s.show };
       }),
     };
   }

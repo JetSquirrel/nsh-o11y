@@ -36,7 +36,7 @@ import { formatTimeFull, type TimeZone, type Unit } from "./scale";
 import { TimeSeries, type SeriesStore } from "./store";
 import type { ChartSync } from "./sync";
 import { resolveTheme } from "./theme";
-import type { Annotation, ChartColors, ChartTheme, CursorInfo, SeriesOptions, Threshold } from "./types";
+import type { Annotation, AxisOptions, ChartColors, ChartTheme, CursorInfo, SeriesOptions, Threshold } from "./types";
 
 /** Data as plain arrays: times (ms) and one array of values per series. */
 export interface ArrayData {
@@ -59,6 +59,9 @@ export interface TimeSeriesChartProps {
   /** Ends the auto-scaled y range always includes: 0 for rates and counts. */
   softMin?: number;
   softMax?: number;
+  /** The second y axis, on the right, for the series with `axis: "right"`: its unit and range, as
+   * `unit`, `yMin`, `yMax`, `softMin` and `softMax` are for the left one. It shows when a series is on it. */
+  y2?: AxisOptions;
   /** Live: show the last `window` ms of data, following it as samples come in. Default: all of it. */
   window?: number;
   /** Horizontal lines: SLOs, alert thresholds. */
@@ -210,6 +213,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
   effect(() => {
     engine.setOptions({
       unit: props.unit ?? "short",
+      y2: props.y2 ?? {},
       yMin: props.yMin ?? null,
       yMax: props.yMax ?? null,
       softMin: props.softMin,
@@ -520,7 +524,7 @@ export function TimeSeriesChart(props: TimeSeriesChartProps) {
                   role="button"
                   testID={props.testID ? `${props.testID}-legend-${i()}` : undefined}
                   accessibilityState={{ selected: shown() }}
-                  accessibilityLabel={`${props.series[i()]?.label}: ${entry()?.text ?? "no value"}`}
+                  accessibilityLabel={`${props.series[i()]?.label}${props.series[i()]?.axis === "right" ? " (right axis)" : ""}: ${entry()?.text ?? "no value"}`}
                   onPress={() => {
                     engine.toggle(i());
                     hidden.update((n) => n + 1);

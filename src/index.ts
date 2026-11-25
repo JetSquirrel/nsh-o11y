@@ -16,6 +16,8 @@ export { renderPlot, renderOverlay, renderStats, type Ctx2D, type PathFactory } 
 export { formatValue, formatTime, formatTimeFull, timeStep, timeTicks, valueTicks, niceRange, niceStep, type Tick } from "./scale";
 export { PALETTE_LIGHT, PALETTE_DARK, withAlpha } from "./palette";
 export type {
+  AxisOptions,
+  AxisSide,
   SeriesOptions,
   Threshold,
   Annotation,
@@ -42,6 +44,19 @@ export { TraceWaterfall, type TraceWaterfallProps } from "./TraceWaterfall";
 export { TraceComparison, type TraceComparisonProps } from "./TraceComparison";
 export { compareTraces, ComparisonEngine, renderComparison, renderComparisonOverlay, type ComparisonRow } from "./tracediff";
 export { TraceModel, type Span, type SpanEvent, type WaterfallRow } from "./traces";
+export { ServiceMap, type ServiceMapProps } from "./ServiceMap";
+export {
+  serviceGraph,
+  ServiceMapEngine,
+  renderServiceMap,
+  renderServiceMapOverlay,
+  type ServiceGraph,
+  type ServiceNode,
+  type ServiceEdge,
+  type ServiceMapOptions,
+  type PlacedNode,
+  type PlacedEdge,
+} from "./servicegraph";
 export { WaterfallEngine, renderWaterfall, renderWaterfallOverlay, type WaterfallOptions } from "./waterfall";
 export { FlameGraph, type FlameGraphProps } from "./FlameGraph";
 export { SandwichView, type SandwichViewProps } from "./SandwichView";

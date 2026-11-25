@@ -10,9 +10,10 @@ test("screenshots: at rest, hovering, zoomed", async () => {
   await app.wait(1500);
   const shot = async (name: string) => {
     try {
-      await app.screenshot(`../bench/results/${name}.png`);
-    } catch {
-      // Headless: nothing drawn.
+      await app.screenshot(`bench/results/${name}.png`);
+    } catch (e) {
+      // Headless runs draw nothing; anything else (a path that does not resolve) fails the test.
+      if (!String(e).includes("needs a real platform")) throw e;
     }
   };
   await shot("dashboard");
@@ -30,9 +31,10 @@ test("screenshots: logs, a trace, a profile", async () => {
   await app.waitFor("id:tab-logs");
   const shot = async (name: string) => {
     try {
-      await app.screenshot(`../bench/results/${name}.png`);
-    } catch {
-      // Headless: nothing drawn.
+      await app.screenshot(`bench/results/${name}.png`);
+    } catch (e) {
+      // Headless runs draw nothing; anything else (a path that does not resolve) fails the test.
+      if (!String(e).includes("needs a real platform")) throw e;
     }
   };
   await app.press("id:tab-logs");

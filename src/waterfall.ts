@@ -10,6 +10,8 @@ import type { SpanEvent, TraceModel, WaterfallRow } from "./traces";
 import type { ChartTheme } from "./types";
 
 export const ERROR_COLOR = "#e34948";
+/** How thick the red edge inside a failed span's bar is, in points. */
+const ERROR_EDGE = 1.5;
 
 /** An exception or error event (OpenTelemetry names them "exception"): drawn red. */
 export function isErrorEvent(ev: SpanEvent) {
@@ -337,7 +339,7 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
   if (m) {
     // Bars, batched by color; errors outlined; the critical path underlined.
     const bars = new RectBatch();
-    let errors = "";
+    const errors = new RectBatch();
     let crit = "";
     let toggles = "";
     let marks = "";
@@ -353,8 +355,13 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
       const rr = Math.min(tl.left + tl.width, Math.max(b, a + 1));
       const by = y + (rh - bh) / 2;
       if (rr > l) {
-        bars.add(e.colorOf(row), l, by, Math.max(1, rr - l), bh);
-        if (s.status === "error") errors += `M${r1(l) + 0.5} ${r1(by) + 0.5}h${r1(Math.max(1, rr - l) - 1)}v${bh - 1}h${r1(-(Math.max(1, rr - l) - 1))}z`;
+        const w = Math.max(1, rr - l);
+        if (s.status === "error") {
+          // A red edge inside the bar's own box: the bar filled red, its color filled over it inset. Fills
+          // line up where a stroke around the bar would spill past it.
+          errors.add(ERROR_COLOR, l, by, w, bh);
+          if (w > 2 * ERROR_EDGE && bh > 2 * ERROR_EDGE) bars.add(e.colorOf(row), l + ERROR_EDGE, by + ERROR_EDGE, w - 2 * ERROR_EDGE, bh - 2 * ERROR_EDGE);
+        } else bars.add(e.colorOf(row), l, by, w, bh);
         if (e.options.criticalPath && e.critical.has(s.spanId)) crit += `M${r1(l)} ${r1(by + bh + 2)}H${r1(rr)}`;
       }
       // Span events: a diamond on the bar at each one's time, red for exceptions.
@@ -375,12 +382,8 @@ export function renderWaterfall(cx: Ctx2D, e: WaterfallEngine, theme: ChartTheme
         toggles += row.collapsed ? `M${tx + 2} ${ty - 4}L${tx + 6} ${ty}L${tx + 2} ${ty + 4}Z` : `M${tx} ${ty - 2}L${tx + 8} ${ty - 2}L${tx + 4} ${ty + 2.5}Z`;
       }
     }
+    errors.fill(cx, path);
     bars.fill(cx, path);
-    if (errors) {
-      cx.strokeStyle = ERROR_COLOR;
-      cx.lineWidth = 1.5;
-      cx.stroke(path(errors));
-    }
     if (crit) {
       cx.strokeStyle = theme.text;
       cx.lineWidth = 1.5;

@@ -1,5 +1,20 @@
 import type { Unit, TimeZone } from "./scale";
 
+/** Which y axis a series or a threshold is measured against: the left one, or the second one on the right. */
+export type AxisSide = "left" | "right";
+
+/** The second y axis, on the right: its own unit and range, for the series with `axis: "right"`. */
+export interface AxisOptions {
+  /** The unit its values are in. Default: the chart's. */
+  unit?: Unit;
+  /** Fixed ends of its range (null: auto). */
+  min?: number | null;
+  max?: number | null;
+  /** Ends its auto-scaled range always includes. */
+  softMin?: number;
+  softMax?: number;
+}
+
 /** How one series (one y column of the store) is drawn. */
 export interface SeriesOptions {
   /** What the legend and the readout call it. */
@@ -18,8 +33,11 @@ export interface SeriesOptions {
   spanGaps?: boolean;
   /** Shown at first. Default true; the legend toggles it. */
   show?: boolean;
-  /** Its own unit in the readout; the chart's otherwise. */
+  /** Its own unit in the readout; its axis's otherwise. */
   unit?: Unit;
+  /** The y axis it is measured against: "right" puts it on a second axis with a scale of its own (the
+   * chart's `y2`). Default "left". */
+  axis?: AxisSide;
 }
 
 /** A horizontal line across the plot: an SLO, an alert threshold. */
@@ -29,6 +47,8 @@ export interface Threshold {
   label?: string;
   /** Default [4, 4]. `[]` is solid. */
   dash?: number[];
+  /** The y axis its value is on. Default "left". */
+  axis?: AxisSide;
 }
 
 /** A moment or a span of time marked on the plot: a deploy, an incident, an alert firing. */
@@ -51,6 +71,8 @@ export interface ChartColors {
   cursor?: string;
   /** The drag-to-zoom box. */
   selection?: string;
+  /** Failures: failed calls and services. Default: the theme's `destructive` token. */
+  error?: string;
   /** Series colors in order. */
   palette?: readonly string[];
 }
@@ -63,6 +85,8 @@ export interface ChartTheme {
   grid: string;
   cursor: string;
   selection: string;
+  /** Failures. Optional so themes made by hand keep working; absent, failures are drawn #e34948. */
+  error?: string;
   /** What the dots at the cursor are ringed with: the surface they sit on. */
   surface: string;
   palette: readonly string[];
@@ -82,6 +106,7 @@ export interface ResolvedSeries {
   spanGaps: boolean;
   show: boolean;
   unit: Unit | undefined;
+  axis: AxisSide;
 }
 
 /** What the cursor is over: the sample nearest it and each series' value there. */

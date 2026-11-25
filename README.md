@@ -27,7 +27,8 @@ draws on NSH's native `<Canvas>`, so it runs on every NSH platform, and ships as
   `+`/`-` zoom, Backspace goes back a zoom, `0` resets.
 - **For O11y**: units (`short`, `bytes`, `ms`, `percent`, `reqps`…), time axes on calendar-friendly
   steps in local time or UTC, thresholds (SLOs), annotations (deploys, incidents), gaps for missing data,
-  steps, fills, a legend with values at the cursor that toggles series, and a shared crosshair and zoom
+  steps, fills, a second y axis with its own unit and scale, a legend with values at the cursor that toggles
+  series, and a shared crosshair and zoom
   across panels (`createChartSync`).
 - **Accessible**: the chart reads as its title, the time and every value under the cursor; keyboard
   navigation; the series palette is the color-blind-checked one from nsh-graph.
@@ -72,13 +73,14 @@ decrease. `NaN` is a missing value.
 | Prop | Default | |
 |---|---|---|
 | `data` | (required) | A store from `createTimeSeries`, or `{ x, ys }`. |
-| `series` | (required) | One `SeriesOptions` per y column: `label`, `color`, `width` (1.5), `fill` (opacity, or `true`), `dash`, `step`, `spanGaps`, `show`, `unit`. |
+| `series` | (required) | One `SeriesOptions` per y column: `label`, `color`, `width` (1.5), `fill` (opacity, or `true`), `dash`, `step`, `spanGaps`, `show`, `unit`, `axis` (`"left"`, or `"right"` for the second axis). |
 | `title` | | |
 | `unit` | `"short"` | `"none"`, `"short"`, `"percent"`, `"percentunit"`, `"bytes"`, `"decbytes"`, `"bits"`, `"ms"`, `"s"`, `"ns"`, `"reqps"`, `"ops"`, or a function. |
 | `yMin` / `yMax` | auto | Fixed ends of the y range. |
 | `softMin` / `softMax` | | Kept inside the auto range: `softMin={0}` for rates. |
+| `y2` | | The second y axis, on the right, for the series with `axis: "right"`: `{ unit?, min?, max?, softMin?, softMax? }`, as `unit`, `yMin`, `yMax`, `softMin` and `softMax` are for the left one. It shows when a series is on it. |
 | `window` | all data | Live: the last `window` ms, following new samples. |
-| `thresholds` | | `{ value, color?, label?, dash? }[]` |
+| `thresholds` | | `{ value, color?, label?, dash?, axis? }[]` |
 | `annotations` | | `{ time, end?, label?, color? }[]`: moments, or spans with `end`. |
 | `timeZone` | `"local"` | or `"utc"`. |
 | `legend` | `true` | Values at the cursor (or the newest); a press toggles the series. |
@@ -176,8 +178,8 @@ const spans: Span[] = [
 <TraceWaterfall spans={spans} onSelect={(span) => showDetails(span)} style={{ flex: 1 }} />
 ```
 
-Each span gets a row: its name indented under its parent, and a bar colored by service. Error spans are
-outlined in red, the critical path is underlined, and span events are diamonds on the bars (red for exceptions;
+Each span gets a row: its name indented under its parent, and a bar colored by service. Error spans have
+a red edge inside their bar, the critical path is underlined, and span events are diamonds on the bars (red for exceptions;
 the tooltip lists them). A controlled `selected` scrolls its row into view. Press a row to select it, or its triangle to fold its
 children. Drag across the timeline to zoom, Ctrl/⌘ + scroll to zoom, scroll through the rows, Shift + scroll to
 pan, double-click to zoom out. Above the time axis, an overview shows every span of the trace (folded or not)
@@ -203,6 +205,27 @@ stayed the same, unless something below them changed, and says how many it hid. 
 right jump to the previous or next call that changed, and Enter opens the row as a press does.
 `compareTraces(a, b)` works headless. In the example, "Compare with a healthy one" on a failed
 trace shows its payment retries as new calls and their time running up the tree.
+
+### `ServiceMap`
+
+```tsx
+<ServiceMap traces={recentTraces} selected={service()} onSelectedChange={({ selected }) => filterBy(selected)} style={{ flex: 1 }} />
+```
+
+The services many traces go through, and the calls between them. A call from A to B is a span in service B
+whose parent is in service A; a service counts the spans that enter it (roots, and spans called from another
+service). Services are laid out left to right: entry services first, each callee a column right of its deepest
+caller, and each column ordered to cross as few calls as it can. A call that goes back (a cycle) is dashed and
+routed under the boxes. Each box shows the service's request rate (a count when the traces span under a second),
+p95 and share of failures; a column too full for two lines gets one-line boxes. An edge's width follows its calls,
+and its rate is written on it where there is room. Services and calls whose share of failures reaches
+`errorThreshold` (default 1%) are drawn in the theme's error color (`colors.error`, by default the `destructive`
+token). Hover a service to light it with its callers and callees, or an edge for its numbers. On a touch screen a
+tap shows the service's numbers instead. Press a service to select it. From the keyboard, → goes to the busiest
+callee, ← to the busiest caller, ↑/↓ through the column, Home and End to the first and last service, and Escape
+clears. Props: `traces` (`Span[]`s, `TraceModel`s, or a graph from `serviceGraph()`), `selected`,
+`onSelectedChange`, `errorThreshold`, `edgeLabels`. `serviceGraph(traces)` works headless. In the example,
+"Service map" maps the newest 500 traces, and selecting a service narrows the trace list to the traces through it.
 
 ### `FlameGraph`
 
@@ -272,6 +295,8 @@ src/
   TraceWaterfall.tsx  the waterfall component
   tracediff.ts        compareTraces: two traces matched call by call; its engine and renderer
   TraceComparison.tsx a slow or failed trace against a healthy one
+  servicegraph.ts     serviceGraph: services and calls from many traces; its layout, engine and renderer
+  ServiceMap.tsx      the service map component
   profile.ts          call trees from folded stacks, stacks or trees; top functions; search
   flame.ts            the flame graph's engine and renderer
   FlameGraph.tsx      the flame graph component
@@ -408,7 +433,6 @@ cd bench/web && bun install && bun run.ts     # every library on the same scenar
 
 - More O11y panels on the same engine: bar and stacked area, exemplars on time series.
 - Logs in the Rust backend, for tens of millions of lines.
-- A second y axis.
 - Keep the newest frame's paths in Rust and hand the canvas a native path handle instead of SVG text.
 
 ## License

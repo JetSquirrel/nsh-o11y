@@ -199,3 +199,30 @@ test("the flame graph from the keyboard: arrows walk the frames, Enter zooms, Es
   await app.wait(50);
   expect(app.shows("id:flame-crumb-1")).toBe(false);
 });
+
+test("the service map: services from the recent traces; picking one filters the trace list", async () => {
+  const app = await open("./App.tsx", { width: 1240, height: 860, platform: "windows" });
+  await app.waitFor("id:tab-traces");
+  await app.press("id:tab-traces");
+  await app.waitFor("id:trace-map");
+  await app.press("id:trace-map");
+  await app.waitFor("id:service-map-plot");
+  expect(app.shows("id:waterfall-plot")).toBe(false);
+  expect(app.accessibility("id:service-map-plot")?.label ?? "").toMatch(/Service map: \d+ services, \d+ calls between them, from \d+ traces/);
+  expect(app.texts().some((t) => /^Services in the last \d+ traces$/.test(t))).toBe(true);
+  // A press gives the map the keyboard; Home picks the entry service.
+  await app.drag("id:service-map-plot", { x: 0, y: 0 });
+  await app.keyboard.press("home");
+  // Headless runs don't route keys to a focused view: this part runs on a real host.
+  if (!(app.accessibility("id:service-map-plot")?.label ?? "").includes("Selected:")) return;
+  expect(app.accessibility("id:service-map-plot")?.label ?? "").toContain("Selected: frontend");
+  await app.waitFor("id:through-clear");
+  await app.keyboard.press("right");
+  expect(app.accessibility("id:service-map-plot")?.label ?? "").toContain("Selected: api-gateway");
+  await app.press("id:through-clear");
+  await app.wait(50);
+  expect(app.shows("id:through-clear")).toBe(false);
+  // A trace from the list opens its waterfall again.
+  await app.press("id:trace-0");
+  await app.waitFor("id:waterfall-plot");
+});

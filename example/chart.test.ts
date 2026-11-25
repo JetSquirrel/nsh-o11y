@@ -47,6 +47,56 @@ describe("engine", () => {
     expect(e.y1).toBeLessThanOrEqual(50);
   });
 
+  test("a second y axis scales its own series, with its own unit, and makes room on the right", () => {
+    const n = 1000;
+    const x = new Float64Array(n).map((_, i) => 1_700_000_000_000 + i * 1000);
+    const big = new Float64Array(n).map((_, i) => 5000 + Math.sin(i / 50) * 1000);
+    const small = new Float64Array(n).map((_, i) => 0.5 + Math.sin(i / 30) * 0.25);
+    const e = new ChartEngine();
+    e.setStore(TimeSeries.from(x, [big, small]));
+    e.setSeries([{ label: "rate" }, { label: "ratio", axis: "right" }], PALETTE_LIGHT);
+    e.setOptions({ unit: "reqps", y2: { unit: "percentunit", softMin: 0 } });
+    e.setSize(800, 300);
+    e.update();
+    expect(e.hasY2).toBe(true);
+    // Each axis fits only its own series.
+    expect(e.y0).toBeGreaterThan(1000);
+    expect(e.y20).toBe(0);
+    expect(e.y21).toBeLessThanOrEqual(1);
+    expect(e.y21).toBeGreaterThanOrEqual(0.75);
+    // Room on the right for its labels, in its unit.
+    expect(800 - (e.plot.left + e.plot.width)).toBeGreaterThan(12);
+    expect(e.formatY2(0.5)).toContain("%");
+    // The same value sits at different heights on each axis; a series' top on its axis is inside the plot.
+    expect(e.toPy(0.75, "right")).toBeGreaterThanOrEqual(e.plot.top);
+    expect(e.toPy(0.75, "right")).not.toBe(e.toPy(0.75));
+    // The readout writes each series in its axis's unit.
+    const info = e.infoAt(0)!;
+    expect(info.values[1].text).toContain("%");
+    // A fixed range wins; hiding the right axis's series keeps the axis (the plot does not jump).
+    e.setOptions({ y2: { min: 0, max: 2 } });
+    e.toggle(1);
+    e.update();
+    expect(e.hasY2).toBe(true);
+    expect(e.y20).toBe(0);
+    expect(e.y21).toBe(2);
+    // Without a series on the right there is no right axis.
+    e.setSeries([{ label: "rate" }, { label: "ratio" }], PALETTE_LIGHT);
+    e.update();
+    expect(e.hasY2).toBe(false);
+    expect(800 - (e.plot.left + e.plot.width)).toBe(12);
+  });
+
+  test("a threshold on the right axis scales and draws on it", () => {
+    const e = engineWith(1000);
+    e.setSeries([{ label: "a" }, { label: "b", axis: "right" }], PALETTE_LIGHT);
+    e.setOptions({ thresholds: [{ value: 1, axis: "right", label: "low" }] });
+    e.update();
+    // b runs 5 to 45: a threshold at 1 sits near enough to stay in view on the right, not the left.
+    expect(e.y20).toBeLessThanOrEqual(1);
+    expect(e.y0).toBeGreaterThan(1);
+  });
+
   test("the plot leaves room for the y labels", () => {
     const e = engineWith(100);
     expect(e.plot.left).toBeGreaterThan(10);
@@ -174,6 +224,29 @@ describe("rendering", () => {
     e.setCursor(400);
     e.beginSelection(200);
     e.moveSelection(300);
+    renderOverlay(cx, e, THEME);
+  });
+
+  test("the right axis's labels go right of the plot, its series and dot on its scale", () => {
+    const e = engineWith(2000);
+    const cx = new OffscreenCanvas(800, 300).getContext("2d") as unknown as Ctx2D;
+    e.measure = (t) => cx.measureText(t).width;
+    e.setSeries([{ label: "a" }, { label: "b", axis: "right", fill: true }], PALETTE_LIGHT);
+    e.setOptions({ y2: { unit: "percent" }, thresholds: [{ value: 20, axis: "right", label: "floor" }] });
+    e.update();
+    const right = e.plot.left + e.plot.width;
+    const texts: { text: string; x: number }[] = [];
+    const fillText = cx.fillText.bind(cx);
+    cx.fillText = (text: string, x: number, y: number) => {
+      texts.push({ text, x });
+      fillText(text, x, y);
+    };
+    renderPlot(cx, e, THEME, (d) => new Path2D(d));
+    const onRight = texts.filter((t) => t.x > right && t.text.endsWith("%"));
+    expect(onRight.length).toBe(e.y2Ticks.filter((v) => v >= e.y20 && v <= e.y21).length);
+    expect(onRight.length).toBeGreaterThan(1);
+    expect(texts.some((t) => t.text === "floor")).toBe(true);
+    e.setCursor(400);
     renderOverlay(cx, e, THEME);
   });
 
