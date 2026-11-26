@@ -8,7 +8,7 @@ other three signals: `LogView` (a log-volume histogram over a virtualized, filte
 draws on NSH's native `<Canvas>`, so it runs on every NSH platform, and ships as an nshm, laid out like
 [nsh-graph](https://github.com/JetSquirrel/nsh-graph).
 
-**[Site and live demo](https://jetsquirrel.github.io/nsh-o11y/)**: the example dashboard, built with `nsh package --target web`
+**[Docs](https://jetsquirrel.github.io/nsh-o11y/docs/)** · **[Site and live demo](https://jetsquirrel.github.io/nsh-o11y/)**: the example dashboard, built with `nsh package --target web`
 (TypeScript store; drag to zoom, wheel to zoom, double-click to reset).
 
 - **Level of detail**: each series keeps a min/max pyramid (blocks of 8, 64, 512… samples). A frame is M4
